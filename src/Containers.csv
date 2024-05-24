@@ -1,0 +1,93 @@
+﻿Name,Volume,Unit,Rows,Cols,Vendor,Catalog
+bottle_1000ml,1,L,1,1,Fisher,FB-800-1000
+bottle_500ml,500,mL,1,1,Fisher,FB-800-500
+bottle_250ml,250,mL,1,1,Fisher,FB-800-250
+conical_50ml,50,mL,1,1,Thermo,339652
+conical_15ml,15,mL,1,1,Corning,430791
+tube_1.5ml,1.5,mL,1,1,Fisher,02-682-002
+tube_500ul,500,µL,1,1,Fisher,02-682-000
+dish_10cm,110,mL,1,1,Fisher,FB 0875712
+dish_6cm,35,mL,1,1,Fisher,FB 0875713A
+brPCR96,200,µL,8,12,Thermo,A32811
+f_bottle_1000mL,1,L,1,1,Fisher,FB12566506
+WP96,200,µL,8,12,Thermo,266120
+WP384,80,µL,16,24,Corning,3680
+iron_nitrate,250,mL,1,1,Sigma ,F8508
+iron_sulfate,500,mL,1,1,Sigma ,F7002
+magnesium_sulfate,500,mL,1,1,Sigma ,M1880
+manganese_sulfate,500,mL,1,1,Sigma,M8179
+sodium_acetate_anhydrous,500,mL,1,1,VWR Ameresco,602
+sodium_acetate,500,mL,1,1,Fisher,BP334-1
+calcium_chloride,500,mL,1,1,Fisher,BP510
+l_cysteine,500,mL,1,1,Fisher,BP377
+sodium_bicarbonate,500,mL,1,1,Fisher,BP328
+potassium_phosphate_di,500,mL,1,1,Fisher,BP363
+potassium_phosphate_mono,500,mL,1,1,Fisher,BP362
+sodium_phosphate_mono,500,mL,1,1,Fisher,BP330
+sodium_phosphate_di,500,mL,1,1,Fisher,BP331
+paba,500,mL,1,1,Sigma,A9878
+biotin,500,mL,1,1,Millipore,2031
+folic_acid,500,mL,1,1,Sgma,F8758
+niacinamide,500,mL,1,1,Sigma,72340
+pantothenate,500,mL,1,1,Sigma,21210
+pyridoxal,500,mL,1,1,Millipore,P6155
+pyridoxamine,500,mL,1,1,Sigma ,R4500
+b_nadph,500,mL,1,1,Goldbio,B-625-10
+riboflavin,500,mL,1,1,Sigma,R4500
+thiamine,500,mL,1,1,Fisher,BP892
+vitamin_b12,500,mL,1,1,Millipore,V6629
+adenine,500,mL,1,1,Sigma,A2786
+guanine,500,mL,1,1,Aldrich,51030
+uracil,500,mL,1,1,Sigma,U1128
+dl_alanine,500,mL,1,1,Sigma,A7502
+l_arginine,500,mL,1,1,Fisher,BP2505
+l_aspartic_acid,500,mL,1,1,Fisher,BP374
+l_asparagine,500,mL,1,1,Sigma,A0844
+l_cystine,500,mL,1,1,Fisher,BP377
+l_glutamic_acid,500,mL,1,1,Sigma,G1521
+l_glutamine,500,mL,1,1,Sigma,G3126
+glycine,500,mL,1,1,Fisher,BP381
+l_histidine,500,mL,1,1,Fisher,BP382
+l_isoleucine,500,mL,1,1,Fisher,BP384
+l_leucine,500,mL,1,1,Fisher,BP385
+l_lysine,500,mL,1,1,Sigma,62840
+l_methionine,500,mL,1,1,Fisher,BP388
+l_phenylalanine,500,mL,1,1,Fisher,BP391
+l_proline,500,mL,1,1,Fisher,BP392
+hydroxy_l_proline,500,mL,1,1,Aldrich,H54409
+l_serine,500,mL,1,1,Fisher,BP393
+l_threonine,500,mL,1,1,Fisher,BP394
+l_tryptophan,500,mL,1,1,Fisher,BP395
+l_valine,500,mL,1,1,Fisher,BP397
+l_tyrosine,500,mL,1,1,Sigma,T3754
+d_cellobiose,500,mL,1,1,Sigma,22150
+maltodextrin,500,mL,1,1,Aldrich,419672
+dextrin_from_corn,500,mL,1,1,Sigma ,D2006
+d_fructose,500,mL,1,1,Sigma,F3510
+d_galactose,500,mL,1,1,Fisher,BP656
+d_glucose,500,mL,1,1,Fisher,D16
+d_mannitol,500,mL,1,1,Sigma,M4125
+d_lactose,500,mL,1,1,Sigma,61345
+d_sorbitol,500,mL,1,1,Sigma,S1876
+d_trehalose,500,mL,1,1,Fisher,BP2687
+d_mannose,500,mL,1,1,Sigma,M6020
+d_sucrose,500,mL,1,1,Fisher,BP220
+d_raffinose,500,mL,1,1,Sigma,R0250
+melibiose,500,mL,1,1,Sigma,M5500
+dimethyl_sulfoxide,500,mL,1,1,Sigma,472301
+thb,500,mL,1,1,Oxoid,CM0189B
+bhi,500,mL,1,1,Millipore,53286
+tryptone,500,mL,1,1,Sigma,T7293
+mrs_broth,500,mL,1,1,Millipore,69966
+sodium_hydroxide,500,mL,1,1,Fisher,SS255
+ethanol,500,mL,1,1,DECON,2701
+hydrochloric_acid,500,mL,1,1,Sigma,258148
+acetic_acid,500,mL,1,1,Sigma,695092
+spectinomycin,500,mL,1,1,Sigma,S4014
+kanamycin,500,mL,1,1,Sigma,K1377
+erythromycin,500,mL,1,1,Sigma,E5389
+ampicillin,500,mL,1,1,Fisher,BP1760
+tryptic_soy_broth,500,mL,1,1,Sigma,22092
+lb_broth,500,mL,1,1,Fisher,BP1427
+dWP96_2ml,2,mL,8,12,VWR,76329-998
+dWP96_1ml,1,mL,8,12,VWR,76330-000
