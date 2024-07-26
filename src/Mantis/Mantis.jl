@@ -1,3 +1,14 @@
+struct Mantis <: Robot 
+    name::AbstractString 
+    minVol::Unitful.Volume
+    compatible_sources::Vector{JLIMS.Container}
+    compatible_destinations::Vector{JLIMS.Container}
+    compatible_stocks::Vector{DataType}
+end 
+
+function mixer_mantis(sources::Vector{JLIMS.Stock},destinations::Vector{JLIMS.Stock},robot::Mantis)
+    
+end
 """
     mantis(design::DataFrame,filepath::String,destination::ContainerName)
 

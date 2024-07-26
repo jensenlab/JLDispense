@@ -1,39 +1,83 @@
 using  CSV, DataFrames
 
 
-struct CobraSettings
-  source::ContainerName
-  destination::ContainerName
+struct CobraProperties <: RobotProperties 
+  minVol::Unitful.Volume
+  maxVol::Unitful.Volume
+  maxASP::Unitful.Volume
+  positions::Vector{DeckPosition}
+  compatible_stocks::Vector{DataType}
+  CobraProperties(minVol,maxVol,maxASP,positions,compatible_stocks)=length(positions)==2 ? new(minVol,maxVol,maxASP,positions,compatible_stocks) : error("Cobra must have two defined deck positions")
+end 
+
+mutable struct CobraConfiguration <: RobotConfiguration
+  source::String
+  destination::String
   ASPRow::String
   ASPCol::Int
   washtime::Int # time in ms 
-  ASPVol::Vector{Float64}
-  path::Vector{String}
-  liquidclasses::Vector{String}
-  usedispensepause::Bool
-  predispensecount::Int64
+  ASPVol::Vector{Real}
+  ASPPad::Real
+  path::Vector{AbstractString}
+  liquidclasses::Vector{AbstractString}
+  pause::Bool
+  predispenses::Int64
+  cobra_path::String
 end
 
+struct Cobra <:Robot
+  name::AbstractString 
+  properties::CobraProperties 
+  configuration::CobraConfiguration
+
+end
+
+
 struct SoftLinxSettings
-  name::String
-  n_loops::String
-  cobrapath::String
+  name::AbstractString
+  n_loops::AbstractString
+  cobrapath::AbstractString
 end 
 
+dwp96_2ml=JLIMS.Container("deep_well_plate_96_2_ml",2u"mL",(8,12))
+dwp96_1ml=JLIMS.Container("deep_well_plate_96_1_ml",1u"mL",(8,12))
+wp96=JLIMS.Container("plate_96",200u"µL",(8,12))
+wp384=JLIMS.Container("plate_384",80u"µL",(16,24))
+
+const cobra_names=Dict{JLIMS.Container,String}(
+  dwp96_2ml=>"Deep Well 2 ml",
+  dwp96_1ml=>"Deep Well - 1 ml",
+  wp96=>"96 Costar",
+  wp384=>"384 Well p/n 3575 3576")
+
+const default_cobra_deck_1=DeckPosition("Deck 1",1,[
+  dwp96_2ml,
+  dwp96_1ml,
+  wp384,
+  wp96
+])
+
+const default_cobra_deck_2=DeckPosition("Deck 2",1,[
+  dwp96_2ml,
+  dwp96_1ml,
+  wp384,
+  wp96
+])
 
 
-
-
-
+cobra_default = Cobra("Default Cobra",
+CobraProperties(0.3u"µL",40u"µL",750u"µL",[default_cobra_deck_1,default_cobra_deck_2],[JLIMS.LiquidStock]),
+CobraConfiguration("N/A","N/A","A",1,5000,[0,0,0,0],1.1,["","","",""],["Water"],true,0,"C:\\Users\\Dell\\Dropbox (University of Michigan)\\JensenLab\\Cobra\\")
+)
 
 #############################################
 # Wrap AcuteML Dependency into a single function 
 #############################################
 
 
-function fill_protocol_template(settings::CobraSettings)
-  Source=settings.source.cobra
-  Destination=settings.destination.cobra
+function fill_protocol_template(settings::CobraConfiguration)
+  Source=settings.source
+  Destination=settings.destination
   ASPRow=settings.ASPRow
   ASPCol=settings.ASPCol
   WashTime=settings.washtime
@@ -315,35 +359,32 @@ end
 
 ########## Cobra Dispense Files ###########
 
-function cobraCSV(volumetric_design::DataFrame,path::String,source::ContainerName,destination::ContainerName)
+function cobraCSV(design::DataFrame,source::JLIMS.Container,destination::JLIMS.Container,path::String)
     
   r_in,c_in=source.shape
   n_in=r_in*c_in
   r_out,c_out=destination.shape
   n_out=r_out*c_out
-  if mod(ncol(volumetric_design),4) != 0
+  if mod(ncol(design),4) != 0
       error("number of reagent columns must be a multiple of 4. Pad the design with empty reagent columns if needed")
   end 
 
-  if ncol(volumetric_design) > n_in 
+  if ncol(design) > n_in 
       error("number of design reagents exceeds the size of the source plate. Split the design across multiple source plates")
   end 
 
-  if nrow(volumetric_design) != n_out
+  if nrow(design) != n_out
       error("output plate size does not match design. Expected design to have $(n_out) rows. Pad design with empty experiments if needed or split the design across multiple destination plates.")
   end 
 
   if !isdir(path)
       mkdir(path)
   end 
-  Asprows=string.(collect('A':'Z'))[1:r_in]
-  Aspcols=1:c_in
-  filenames=String[]
-  ASPRow=String[]
-  ASPCol=String[]
-  for j in 1:ncol(volumetric_design)
 
-      x=volumetric_design[:,j]
+  filenames=String[]
+  for j in 1:ncol(design)
+
+      x=design[:,j]
       x=reshape(x,r_out,c_out)
       x=DataFrame(x,:auto)
       filename=joinpath(path,"DispenseFile$(j).csv")
@@ -354,8 +395,8 @@ function cobraCSV(volumetric_design::DataFrame,path::String,source::ContainerNam
 end 
 
 
-function fill_design(volumetric_design::DataFrame,source::ContainerName,destination::ContainerName)
-  x=Matrix(volumetric_design)
+function fill_design(design::DataFrame,source::JLIMS.Container,destination::JLIMS.Container)
+  x=Matrix(design)
 
   
   r_in,c_in=source.shape
@@ -388,7 +429,11 @@ function snake_order(r,c;channel=isodd) # generate the order of dispenses for a 
 end
 
 
-function design2protocols(design::DataFrame,path::String,liquidclasses::Vector{String},source::ContainerName,destination::ContainerName,washtime::Int,dispensepause::Bool,predispensecount::Int,pad::Real,maxASP::Real,maxShot::Real,cobra_location::String)
+function design2protocols(directory::String,design::DataFrame,source::JLIMS.Container,destination::JLIMS.Container,robot::Cobra)
+  pad=robot.configuration.ASPPad
+  maxASP=robot.properties.maxASP
+  maxShot=robot.properties.maxVol
+  cobra_location=robot.configuration.cobra_path
   # Check for issues with the design
 
     r_in,c_in=source.shape
@@ -397,16 +442,16 @@ function design2protocols(design::DataFrame,path::String,liquidclasses::Vector{S
     n_out=r_out*c_out
     des=Matrix(design)
     r,c=size(des)
-    if r != n_out 
+    if r != n_in
       error("output plate size does not match design. Expected design to have $(n_out) rows. Pad design with empty experiments if needed or split the design across multiple destination plates.")
     end 
-    if c != length(liquidclasses)
+    if r != length(config.liquidclasses)
       error("each of the $c reagents must have a specified liquid class")
     end 
-    if c > n_in 
+    if c > n_out 
       error("number of design reagents exceeds the size of the source plate. Split the design across multiple source plates")
     end 
-    if mod(c,4) != 0 
+    if mod(r,4) != 0 
         ArgumentError("The number of design columns must be a multiple of 4")
     end 
     filecounter=1
@@ -414,8 +459,8 @@ function design2protocols(design::DataFrame,path::String,liquidclasses::Vector{S
     cols=1:c_in
     pos=collect(Iterators.product(rows,cols))
     positions=reshape(pos,prod(size(pos)),1)
-    experiment_name=splitpath(path)[end]
     protocols=String[]
+    configs=Cobra[]
   # Start the protocol generation process  
     for set in 1:fld(c,4) # loop through sets of four locations in the source plate 
       idxs=4*(set-1)+1:4*(set-1)+4
@@ -437,21 +482,34 @@ function design2protocols(design::DataFrame,path::String,liquidclasses::Vector{S
           end 
           x=reshape(to_dispense[:,channel],r_out,c_out)
           x=DataFrame(x,:auto)
-          filename=joinpath(path,"DispenseFile$(filecounter).csv")
+          filename=joinpath(directory,"DispenseFile$(filecounter).csv")
           push!(fileidxs,filecounter)
           filecounter+=1
           CSV.write(filename,x)   
         end 
         d=d.-to_dispense
+
+        cobra_name=robot.name
+        cobra_properties=robot.properties
         
+        cobra_config=deepcopy(robot.configuration)
 
+        cobra_config.ASPRow=positions[set][1]
+        cobra_config.ASPCol=positions[set][2]
+        cobra_config.ASPVol=vec(sum(to_dispense,dims=1))*pad
+        cobra_config=config.liquidclasses[idxs]
+        cobra_config.source=cobra_names[source]
+        cobra_config.destination=cobra_names[destination]
 
-        cobra_path=[cobra_location*"$(experiment_name)\\DispenseFile$(k).csv" for k in fileidxs]
-        settings=CobraSettings(source,destination,positions[set][1],positions[set][2],washtime,vec(sum(to_dispense,dims=1))*pad,cobra_path,liquidclasses[idxs],dispensepause,predispensecount)
+        cobra_config.path=[cobra_location*"$(experiment_name)\\DispenseFile$(k).csv" for k in fileidxs]
+        cobra_config.cobra_path=cobra_location
+        configured_cobra=Cobra(cobra_name,cobra_properties,cobra_config)
+        push!(configs,configured_cobra)
+        #settings=CobraSettings(source,destination,positions[set][1],positions[set][2],washtime,vec(sum(to_dispense,dims=1))*pad,cobra_path,liquidclasses[idxs],dispensepause,predispensecount)
         push!(protocols,fill_protocol_template(settings))
       end  
     end 
-    return protocols 
+    return protocols,configs
 end 
         
 
@@ -462,7 +520,162 @@ function protocols2softlinx(n_protocols::Int64,experiment_name::String,cobra_loc
     return softlinx_out
 end 
 
+# plate to plate mixer
+function cobra_mixer(sources::Vector{JLIMS.Stock},destinations::Vector{JLIMS.Stock},robot::Cobra;quiet=false,timelimit=10)
+  source_deck=robot.properties.positions[1]
+  destination_deck=robot.properties.positions[2]
+  any(map(x -> !in(x.well.container,source_deck.compatible_containers)||!in(typeof(x),robot.properties.compatible_stocks),sources)) ? nothing : error("Robot $(robot.name) is incapable of using at least one of the requested source stocks")
+  if any(map(x->!in(typeof(x),robot.properties.compatible_stocks)||!in(x.well.container,destination_deck.compatible_containers),destinations)) 
+      error("Robot $(robot.name) is incapable of making at least one of the requested stocks")
+  end 
 
+  source_labware=unique(map(x->x.well.labwareid,sources))
+
+  sl_idx=map(x->findall(y->y.well.labwareid==x,sources),source_labware)
+  source_containers=map(x->sources[x[1]].well.container,sl_idx)
+
+  destination_labware=unique(map(x->x.well.labwareid,desitnations))
+  dl_idx=map(x->findall(y->y.well.labwareid==x,destinations),destination_labware)
+  destination_containers=map(x->destiantions[x[1]].well.container,dl_idx)
+  sl=length(source_labware)
+  dl=length(destination_labware)
+
+
+  concentrations=stock_concentration_array(sources)
+  target_quantities=stock_quantity_array(destinations)
+  concentrations=concentrations[:,DataFrames.names(target_quantities)]
+      
+  concentrations=Float64.(ustrip.(Matrix(concentrations)))
+
+  target_quantities=Float64.(ustrip.(Matrix(target_quantities)))
+
+  source_quantities= map(x->x.quantity,available_sources) 
+  source_units= preferred_stock_quantity(available_sources)
+  source_quants=uconvert.(source_quantities,source_units)
+      
+  S,I=size(concentrations)
+  D,I=size(target_quantities)
+  model=Model(Gurobi.Optimizer)
+  if quiet 
+      set_silent(model)
+  end 
+      set_attribute(model,"TimeLimit",timelimit)
+
+      
+      @variable(model,q[1:S,1:D] >=0)
+      @variable(model,lw[1:sl,1:dl],Bin)
+      @variable(model,multipass_well[1:S,1:D],Bin)
+      @variable(model, multipass_stock[1:S],Bin)
+      @constraint(model, q'*concentrations .== target_quantities) # find the quantity of each stock needed to make the target 
+
+      for s in 1:S 
+        @constraint(model, sum(q[s,:])*robot.configuration.ASPPad <= stock_quants[s])
+      end 
+
+      for s in 1:sl 
+        for d in 1:dl 
+          @constraint(model, !lw[s,d]=>{sum(q[sl_idx[s],dl_idx[d]]) == 0})
+        end 
+      end 
+      for s in 1:S
+        for d in 1:D
+          @constraint(model, !multipass_well[s,d]=> {q[s,d] <=robot.properties.maxVol}) # flag wells that need multiple passes from a source
+        end 
+      end 
+      for s in 1:S
+        @constraint(model, !multipass_stock[s]=> {sum(q[s,:]) <= robot.properties.maxASP}) # flag sources that need multiple passes 
+      end 
+
+      @objective(model, Min,sum(lw)) # minimize the number of labware pairings needed (number of protocols to be written) 
+      optimize!(model)
+
+      w =JuMP.Value.(lw)
+      @constraint(model, lw .==w)
+      set_objective_sense(model, MOI.FEASIBILITY_SENSE)
+      @objective(model, Min,sum(mulitpass_well)) # minimize the number of wells that need multiple passes to fill (dispense volume greater than max shot volume of cobra)
+      optimize!(model)
+
+      m =JuMP.Value.(mutlipass_well)
+      @constraint(model, multipass_well .==m)
+      set_objective_sense(model, MOI.FEASIBILITY_SENSE)
+      @objective(model, Min,sum(multipass_stock)) # minimize the number of revisits to a particular stock (sum(dispense volumes) greater than max aspiration volume for cobra)
+      optimize!(model)
+
+      quants=JuMP.value.(q)
+  
+
+      
+      quantities=Any[]
+      for stock in available_sources
+          un=preferred_stock_quantity(stock)
+          if stock in srcs 
+              idx=findfirst(x->x==stock,srcs)
+              val=quants[idx]*un
+              if isa(val,Unitful.Mass)
+                  if 0u"g" <val < robot.minMass
+                      error("The $val mass required for the stock in well #$(stock.well.id) is too small for a $(typeof(robot)) to accurately transfer")
+                  elseif  val > robot.maxMass
+                      error("The $val mass required for the stock in well #$(stock.well.id) is too large for a $(typeof(robot)) to accurately transfer")
+                  end 
+              elseif isa(val,Unitful.Volume)
+                  if 0u"L" <val < robot.minVol
+                      error("The $val volume required for the stock in well #$(stock.well.id) is too small for a $(typeof(robot)) to accurately transfer")
+                  elseif  val > robot.maxVol
+                      error("The $val volume required for the stock in well #$(stock.well.id) is too large for a $(typeof(robot)) to accurately transfer")
+                  end 
+              end 
+              push!(quantities,quants[idx]*un) # commit the transfer to the transfers vector for this destination stock 
+              
+          else
+              push!(quantities,0*un) # commit a 0 to the transfers vector
+          end 
+      end 
+      wellnames=["Well$(i)" for i in map(x->x.well.id,destinations)]
+      transfers=DataFrame(quantities,wellnames) # volumes in µL
+      tf=ustrip.(transfers) 
+      n_pairs=sum(w) 
+      protocols=Tuple{DataFrame,Vector{JLIMS.Stock},Vector{JLIMS.Stock}}[]
+      for i in 1:sl 
+        for j in 1:dl 
+          if w[i,j]==1 
+            if i ==j 
+              error("cannot schedule the same labware in two positions at the same time")
+            end 
+            active_sources=sources[sl_idx[i]]
+            active_destinations=destinations[dl_idx[j]]
+            rows=prod(source_containers[i].shape)
+            cols=prod(destination_containers[j].shape)
+            df = DataFrame(zeros(rows,cols))
+            row_idxs=map(x->x.well.wellindex,active_sources)
+            col_idxs=map(x->x.well.wellindex,active_destinations)
+            df[row_idxs,col_idxs] .= tf[sl_idx[i],dl_idx[j]]
+            push!(protocols,(df,active_sources,active_destinations))
+          end 
+        end 
+      end 
+
+      transfer_table=DataFrame(Source=Integer[],Destination=Integer[],Quantity=Real[],Unit=AbstractString[])
+      r=nrow(transfers)
+      c=ncol(transfers)
+      for col in 1:c
+          for row in 1:r 
+              val=transfers[row,col]
+              quantity=ustrip(val)
+              if quantity==0 
+                  continue 
+              else 
+                  source=sources[row].well.id 
+                  destination=destinations[col].well.id
+                  un=string(unit(val))
+                  push!(transfer_table,(source,destination,quantity,un))
+              end 
+          end 
+      end 
+
+      
+      return transfer_table, protocols 
+  end 
+ 
 
 
 
@@ -488,35 +701,47 @@ Create Cobra dipsense instructions for microplate source to destination operatio
   * `predispensecount=0`: Number of pre-dispense shots Cobra performs before dispensing 
   *  `cobra_location="C:\\Users\\Dell\\Dropbox (University of Michigan)\\JensenLab\\Cobra\\"`: The location of the cobra's working directory on the driving machine.
 """
-function cobra(design::DataFrame,directory::String,source::ContainerName,destination::ContainerName, liquidclasses::Vector{String} ;pad::Real=1.1,maxASP::Real=800,maxShot::Real=40,pause::Bool=true,predispensecount::Int=0,washtime::Int=8000,cobra_location="C:\\Users\\Dell\\Dropbox (University of Michigan)\\JensenLab\\Cobra\\", kwargs...)
-
+function cobra_instructor(directory::String,protocol_name::AbstractString,design::DataFrame,sources::Vector{JLIMS.Stock},destinations::Vector{JLIMS.Stock},robot::Cobra;liquidclass="Water")
+    allequal(map(x->x.well.labwareid,sources)) ? nothing : error("All source stocks must be on the same labware")
+    allequal(map(x.well.labwareid,destinations)) ? nothing : error("All destination stocks must be on the same labware")
+    source=sources[1].well.container
+    destination=destinations[1].well.container 
+    robot.configuration.liquidclasses=[liquidclass for _ in 1:ncol(design)] #hard code the same liquid class for each reagent 
     if ~isdir(directory)
       mkdir(directory)
     end 
-    p=ncol(design)
-    r,c=source.shape
-    if p > r*c
-      error("Number of sources greater than the size of the source plate")
-    end 
 
-    to_add=(4-(p%4))%4
-    n=nrow(design)
-    liquidclasses=vcat(liquidclasses,["Water" for _ in 1:to_add])
-    add_design=DataFrame(zeros(n,to_add),["filler$i" for i in 1:to_add]) # fill out the design so it has a multiple of four columns. 
-    design=hcat(design,add_design)
-    #println(ncol(design))
-    experiment_name=splitpath(directory)[end]
-    protocols=design2protocols(design,directory,liquidclasses,source,destination,washtime,pause,predispensecount,pad,maxASP,maxShot,cobra_location)
+    full_dir=joinpath(directory,protocol_name)
+    if ~isdir(full_dir)
+      mkdir(full_dir)
+    end 
+    protocols,cobra_configs=design2protocols(full_dir,design,source,destination,robot)
     protocol_names=["DispenseProtocol$(k).xml" for k in 1:length(protocols)]
-    full_protocol_names=joinpath.((directory,),protocol_names)
+    full_protocol_names=joinpath.((full_dir,),protocol_names)
     map((loc,protocol) -> write(loc,protocol),full_protocol_names,protocols)
     n_protocols=length(protocols)
-    experiment_name=splitpath(directory)[end]
-    softlinx=protocols2softlinx(n_protocols,experiment_name,cobra_location)
-    full_softlinx_name=joinpath(directory,"$(experiment_name).slvp")
+    softlinx=protocols2softlinx(n_protocols,protocol_name,robot.configuration.cobra_path)
+    full_softlinx_name=joinpath(full_dir,"$(protocol_name).slvp")
     write(full_softlinx_name,softlinx)
+    write(joinpath(full_dir,"config.json"),JSON.json(cobra_configs))
     #print("entire $(experiment_name) folder must be moved to Dropbox -> JensenLab -> Cobra")
 end
+
+
+
+
+function cobra(directory::AbstractString,sources::Vector{JLIMS.Stock},destinations::Vector{JLIMS.Stock},robot::Cobra;kwargs...)
+  tt, protocols=cobra_mixer(sources,destinations,robot;kwargs...)
+  names=random_protocol_name(length(protocols))
+  for i in eachindex(protocols)
+    cobra_instructor(directory,names[i],protocols[i][1],protocols[i][2],protocols[i][3],robot;kwargs...)
+  end 
+  return tt 
+end 
+
+
+
+
 
 
 
