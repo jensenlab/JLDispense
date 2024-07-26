@@ -2,7 +2,7 @@
 
 julia_version = "1.8.2"
 manifest_format = "2.0"
-project_hash = "1fb90428015bfe5bd3058e69b021f04d138debf7"
+project_hash = "51d94ff39ab6813e4fb35f930c029ff8011e59c4"
 
 [[deps.ArgTools]]
 uuid = "0dad84c5-d112-42e6-8d28-ef12dabb789f"
@@ -460,14 +460,6 @@ uuid = "3fa0cd96-eef1-5676-8a61-b3b8758bbffb"
 [[deps.Random]]
 deps = ["SHA", "Serialization"]
 uuid = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
-
-[[deps.RandomProtocolNames]]
-deps = ["Random"]
-git-tree-sha1 = "6536ce92701ded4381d02aa5b8a3410f6c638b99"
-repo-rev = "main"
-repo-url = "https://github.com/bmdavid2/RandomProtocolNames"
-uuid = "7e599a7a-9aa2-4e40-a313-4e947a18035e"
-version = "0.1.0"
 
 [[deps.Reexport]]
 git-tree-sha1 = "45e428421666073eab6f2da5c9d310d99bb12f9b"
