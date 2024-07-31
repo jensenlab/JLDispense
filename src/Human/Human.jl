@@ -156,8 +156,9 @@ end
 
 function human(directory::AbstractString,sources::Vector{JLIMS.Stock},destinations::Vector{JLIMS.Stock},robot::Human;kwargs...)
     tt,protocol=human_mixer(sources,destinations,robot;kwargs...)
-    human_instructor(directory,random_protocol_name(),protocol[1],protocol[2],protocol[3],robot)
-    return tt 
+    protocol_name=random_protocol_name()
+    human_instructor(directory,protocol_name,protocol[1],protocol[2],protocol[3],robot)
+    return protocol_name,tt 
 end 
 
 

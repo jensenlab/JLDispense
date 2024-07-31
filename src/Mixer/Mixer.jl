@@ -64,9 +64,17 @@ end
 
 
 
-function mixer(sources::Vector{JLIMS.Stock},destinations::Vector{JLIMS.Stock},robot::Robot)
-    # Assume a solution exists where the mixer can make destinations from sources using robot 
+function mixer(sources::Vector{JLIMS.Stock},destinations::Vector{JLIMS.Stock},robot::Robot;directory=pwd())
+
+    robot_type=typeof(robot) 
+    tt=DataFrame() 
+    protocol_name=""
+    if robot_type == Human 
+        tt,protocol_name=human(directory,sources,destinations,robot) 
+    else
+        error("$robot_type is unsupported by the mixer")
+    end 
      
-    
+    return tt, protocol_name
 end 
 

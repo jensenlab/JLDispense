@@ -6,8 +6,14 @@ struct OverdraftError <: Exception
     msg::AbstractString
 end 
 
+struct MissingIngredientError <: Exception 
+    msg::AbstractString
+    ings::Vector{AbstractString}
+end 
+
 struct InsufficientIngredientError <: Exception 
     msg::AbstractString
+    ings::Vector{AbstractString}
 end 
 
 struct ContainerError <: Exception 
@@ -21,6 +27,7 @@ end
 
 Base.showerror(io::IO , e::MixingError) = print(io, e.msg)
 Base.showerror(io,::IO, e::OverdraftError)= print(io,e.msg)
+Base.showerror(io,::IO, e::MissingIngredientError)= print(io,e.msg)
 Base.showerror(io,::IO, e::InsufficientIngredientError)= print(io,e.msg)
 Base.showerror(io,::IO, e::ContainerError)= print(io,e.msg)
 Base.showerror(io,::IO, e::StockCompatibilityError)= print(io,e.msg)
@@ -56,24 +63,34 @@ function feasibility(sources::Vector{T},destinations::Vector{U},robot::Robot;qui
     sl=length(source_labware)
     dl=length(destination_labware)
 
-    concentrations=stock_concentration_array(available_sources)
+    
     target_quantities=stock_quantity_array(destinations)
 
     nt=DataFrames.names(target_quantities)
+    available_sources=filter(y->all(map(x->in(x,nt),ingredients(y.composition))),available_sources) # block any source that has extraneous ingredients 
+    concentrations=stock_concentration_array(available_sources)
     needed_ingredients=map(x->!in(x,DataFrames.names(concentrations)),nt)
     if any(needed_ingredients)
             ings=filter(x->!in(x,DataFrames.names(concentrations)),nt)
-            throw(InsufficientIngredientError("No source of $(join(ings,",")) available to complete the dispenses"))
+            throw(MissingIngredientError("No valid source of $(join(ings,",")) available to complete the dispenses",ings))
     end 
 
     concentrations=concentrations[:,nt]
-        
-    concentrations=Float64.(ustrip.(Matrix(concentrations)))
-  
-    target_quantities=Float64.(ustrip.(Matrix(target_quantities)))
     source_quantities= map(x->x.quantity,available_sources) 
     source_units= preferred_stock_quantity.(available_sources)
     source_quants=uconvert.(source_units,source_quantities)
+
+    ingredient_balance = concentrations' * source_quants .- sum(target_quantities,dims=1)'
+    shortages = usrtip.(ingredient_balance) .< 0 
+    if any(shortages) 
+        ings=nt[findall(x->x==true,shortages)]
+        throw(InsufficientIngredientError("Insufficient Quantities of $(join(ings,",")) available to compelte the dispenses",ings))
+    end 
+    concentrations=Float64.(ustrip.(Matrix(concentrations)))
+  
+    target_quantities=Float64.(ustrip.(Matrix(target_quantities)))
+    
+
     source_quants=ustrip.(source_quants)
 
 
@@ -100,23 +117,14 @@ function feasibility(sources::Vector{T},destinations::Vector{U},robot::Robot;qui
         @objective(model, Min,sum(lw)) # minimize the number of labware needed to complete the dispenses  
         optimize!(model) # optimize to check that the source stocks could in theory make the destinations 
         if !JuMP.is_solved_and_feasible(model)
-            throw(MixingError("the requested stocks cannot be made using the available sources"))
-        else  
-            for s in 1:S 
-                @constraint(model,pad*sum(q[s,:])<= source_quants[s]) # ensure that dispensing can be completed by adding a quantity pad. This is a heuristic measure to account for dead volumes in the sources or in the robot. 
-            end 
-            set_objective_sense(model, MOI.FEASIBILITY_SENSE)
-            @objective(model, Min,sum(lw)) # minimize the number of wells that need multiple passes to fill (dispense volume greater than max shot volume of cobra)
-            optimize!(model)
-            if !JuMP.is_solved_and_feasible(model)
-                throw(OverdraftError("There is an insufficient quantity of one or more stocks"))
-            end 
+            throw(MixingError("the requested stocks cannot be made using this combination of sources"))
         end 
-    
 
+        quants=pad*sum(JuMP.Value.(q);dims=2).-source_quants # find out how much more we need 
 
-        active_labware=JuMP.value.(lw)
-        idxs=unique(vcat(sl_idx[findall(x->x==1,active_labware)]...))
-        return available_sources[idxs]
+        out_quants=max.(quants,(0))
+
+        needed =Dict(available_sources .=> out_quants.*source_units)
+        return needed 
 
 end 
