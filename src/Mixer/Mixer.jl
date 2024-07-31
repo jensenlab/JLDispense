@@ -64,7 +64,7 @@ end
 
 
 
-function mixer(sources::Vector{JLIMS.Stock},destinations::Vector{JLIMS.Stock},robot::Robot;directory=pwd(),kwargs...)
+function mixer(sources::Vector{T},destinations::Vector{U},robot::Robot;directory=pwd(),kwargs...) where {T <: JLIMS.Stock,U <:JLIMS.Stock}
 
     robot_type=typeof(robot) 
     tt=DataFrame() 

@@ -31,7 +31,7 @@ HumanConfiguration("n/a")
 )
 
 
-function human_mixer(sources::Vector{JLIMS.Stock},destinations::Vector{JLIMS.Stock},robot::Human;quiet=false,timelimit=10)
+function human_mixer(sources::Vector{T},destinations::Vector{U},robot::Human;quiet=false,timelimit=10) where {T <: JLIMS.Stock,U <:JLIMS.Stock}
  
     transfers=DataFrame()
 
@@ -123,7 +123,7 @@ end
 
 
 
-function human_instructor(directory::AbstractString, protocol_name::AbstractString,design::DataFrame,sources::Vector{JLIMS.Stock},destinations::Vector{JLIMS.Stock},robot::Human)
+function human_instructor(directory::AbstractString, protocol_name::AbstractString,design::DataFrame,sources::Vector{T},destinations::Vector{U},robot::Human) where {T <: JLIMS.Stock,U <:JLIMS.Stock}
     nrow(design) ==length(sources) ? nothing : error("number of rows in the design must equal the number of source stocks")
     ncol(design)== length(destinations) ? nothing : error("number of columns in the design must equal the number of destination stocks")
 
@@ -154,7 +154,7 @@ function human_instructor(directory::AbstractString, protocol_name::AbstractStri
 end 
 
 
-function human(directory::AbstractString,sources::Vector{JLIMS.Stock},destinations::Vector{JLIMS.Stock},robot::Human;kwargs...)
+function human(directory::AbstractString,sources::Vector{T},destinations::Vector{U},robot::Human;kwargs...) where {T <: JLIMS.Stock,U <:JLIMS.Stock}
     tt,protocol=human_mixer(sources,destinations,robot;kwargs...)
     protocol_name=random_protocol_name()
     human_instructor(directory,protocol_name,protocol[1],protocol[2],protocol[3],robot)
