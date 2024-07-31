@@ -64,13 +64,13 @@ end
 
 
 
-function mixer(sources::Vector{JLIMS.Stock},destinations::Vector{JLIMS.Stock},robot::Robot;directory=pwd())
+function mixer(sources::Vector{JLIMS.Stock},destinations::Vector{JLIMS.Stock},robot::Robot;directory=pwd(),kwargs...)
 
     robot_type=typeof(robot) 
     tt=DataFrame() 
     protocol_name=""
     if robot_type == Human 
-        tt,protocol_name=human(directory,sources,destinations,robot) 
+        tt,protocol_name=human(directory,sources,destinations,robot;kwargs...) 
     else
         error("$robot_type is unsupported by the mixer")
     end 
