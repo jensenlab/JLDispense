@@ -4,6 +4,7 @@ struct MixingError <:Exception
     
 struct OverdraftError <: Exception 
     msg::AbstractString
+    balances::Dict{JLIMS.Stock,Unitful.Quantity}
 end 
 
 struct MissingIngredientError <: Exception 
@@ -124,13 +125,22 @@ function feasibility(sources::Vector{T},destinations::Vector{U},robot::Robot;qui
         optimize!(model) # optimize to check that the source stocks could in theory make the destinations 
         if !JuMP.is_solved_and_feasible(model)
             throw(MixingError("the requested stocks cannot be made using this combination of sources"))
+        end
+
+        quants=pad*sum(JuMP.value.(q);dims=2) # find out how much we need 
+
+        
+        needed =Dict(available_sources .=> quants.*source_units)
+        
+        for s in 1:S
+        @constraint(model, pad*sum(q[s,:]) <= source_quants[s])
         end 
-
-        quants=pad*sum(JuMP.value.(q);dims=2).-source_quants # find out how much more we need 
-
-        out_quants=max.(quants,(0,))
-
-        needed =Dict(available_sources .=> out_quants.*source_units)
-        return needed 
+        set_objective_sense(model, MOI.FEASIBILITY_SENSE)
+        @objective(model, Min,sum(lw))
+        optimize!(model)
+        if !JuMP.is_solved_and_feasible(model)
+            throw(OverdraftError("Refills are needed of the following stocks",needed))
+        end
+        return true  
 
 end 
