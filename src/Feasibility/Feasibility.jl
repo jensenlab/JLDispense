@@ -53,6 +53,11 @@ function feasibility(sources::Vector{T},destinations::Vector{U},robot::Robot;qui
 
 
     available_sources= filter(x->in(typeof(x),robot.properties.compatible_stocks),available_sources)
+    
+    destination_ingredients=unique(vcat(ingredients.(map(x->x.composition,destinations))...))
+    available_sources=filter(y->all(map(x->in(x,destination_ingredients),ingredients(y.composition))),available_sources) # block any source that has extraneous ingredients 
+
+
     source_labware=unique(map(x->x.well.labwareid,available_sources))
     sl_idx=map(x->findall(y->y.well.labwareid==x,available_sources),source_labware)
     #source_containers=map(x->available_sources[x[1]].well.container,sl_idx)
@@ -65,10 +70,10 @@ function feasibility(sources::Vector{T},destinations::Vector{U},robot::Robot;qui
 
     
     target_quantities=stock_quantity_array(destinations)
-    destination_ingredients=unique(vcat(ingredients.(map(x->x.composition,destinations))...))
+    
 
     nt=DataFrames.names(target_quantities)
-    available_sources=filter(y->all(map(x->in(x,destination_ingredients),ingredients(y.composition))),available_sources) # block any source that has extraneous ingredients 
+    
     concentrations=stock_concentration_array(available_sources)
     needed_ingredients=map(x->!in(x,DataFrames.names(concentrations)),nt)
     if any(needed_ingredients)
@@ -80,12 +85,13 @@ function feasibility(sources::Vector{T},destinations::Vector{U},robot::Robot;qui
     source_quantities= map(x->x.quantity,available_sources) 
     source_units= preferred_stock_quantity.(available_sources)
     source_quants=uconvert.(source_units,source_quantities)
-
-    ingredient_balance = concentrations' * source_quants .- sum(target_quantities,dims=1)'
-    shortages = usrtip.(ingredient_balance) .< 0 
+    tq=Matrix(target_quantities)
+    ingredient_balance = Matrix(concentrations)' * source_quants .- [sum(tq[:,i]) for i in 1:(size(tq)[2])]*pad
+    println(ingredient_balance)
+    shortages = ustrip.(ingredient_balance) .< 0 
     if any(shortages) 
         ings=nt[findall(x->x==true,shortages)]
-        throw(InsufficientIngredientError("Insufficient Quantities of $(join(ings,",")) available to compelte the dispenses",ings))
+        throw(InsufficientIngredientError("insufficient quantities of $(join(ings,",")) available to compelte the dispenses",ings))
     end 
     concentrations=Float64.(ustrip.(Matrix(concentrations)))
   
@@ -121,9 +127,9 @@ function feasibility(sources::Vector{T},destinations::Vector{U},robot::Robot;qui
             throw(MixingError("the requested stocks cannot be made using this combination of sources"))
         end 
 
-        quants=pad*sum(JuMP.Value.(q);dims=2).-source_quants # find out how much more we need 
+        quants=pad*sum(JuMP.value.(q);dims=2).-source_quants # find out how much more we need 
 
-        out_quants=max.(quants,(0))
+        out_quants=max.(quants,(0,))
 
         needed =Dict(available_sources .=> out_quants.*source_units)
         return needed 
