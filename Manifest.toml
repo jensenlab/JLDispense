@@ -209,7 +209,7 @@ version = "0.4.50"
 
 [[deps.JLIMS]]
 deps = ["CSV", "DataFrames", "Test", "Unitful", "UnitfulParsableString"]
-git-tree-sha1 = "a2a6044a2db285352a0e5b157bdc04533e22d33e"
+git-tree-sha1 = "02a2e56f270c9ceedb4606a8044b8783c953d052"
 repo-rev = "main"
 repo-url = "https://github.com/jensenlab/JLIMS"
 uuid = "40aca73e-78db-4064-9398-4788728e7bb7"
