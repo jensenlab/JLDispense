@@ -86,13 +86,6 @@ function feasibility(sources::Vector{T},destinations::Vector{U},robot::Robot;qui
     source_quantities= map(x->x.quantity,available_sources) 
     source_units= preferred_stock_quantity.(available_sources)
     source_quants=uconvert.(source_units,source_quantities)
-    tq=Matrix(target_quantities)
-    ingredient_balance = Matrix(concentrations)' * source_quants .- [sum(tq[:,i]) for i in 1:(size(tq)[2])]*pad
-    shortages = ustrip.(ingredient_balance) .< 0 
-    if any(shortages) 
-        ings=nt[findall(x->x==true,shortages)]
-        throw(InsufficientIngredientError("insufficient quantities of $(join(ings,",")) available to compelte the dispenses",ings))
-    end 
     concentrations=Float64.(ustrip.(Matrix(concentrations)))
   
     target_quantities=Float64.(ustrip.(Matrix(target_quantities)))
