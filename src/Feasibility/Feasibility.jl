@@ -53,7 +53,7 @@ function feasibility(sources::Vector{T},destinations::Vector{U},robot::Robot;qui
 
 
     available_sources= filter(x->in(typeof(x),robot.properties.compatible_stocks),available_sources)
-    
+
     destination_ingredients=unique(vcat(ingredients.(map(x->x.composition,destinations))...))
     available_sources=filter(y->all(map(x->in(x,destination_ingredients),ingredients(y.composition))),available_sources) # block any source that has extraneous ingredients 
 
@@ -87,7 +87,6 @@ function feasibility(sources::Vector{T},destinations::Vector{U},robot::Robot;qui
     source_quants=uconvert.(source_units,source_quantities)
     tq=Matrix(target_quantities)
     ingredient_balance = Matrix(concentrations)' * source_quants .- [sum(tq[:,i]) for i in 1:(size(tq)[2])]*pad
-    println(ingredient_balance)
     shortages = ustrip.(ingredient_balance) .< 0 
     if any(shortages) 
         ings=nt[findall(x->x==true,shortages)]
