@@ -65,9 +65,10 @@ function feasibility(sources::Vector{T},destinations::Vector{U},robot::Robot;qui
 
     
     target_quantities=stock_quantity_array(destinations)
+    destination_ingredients=unique(vcat(ingredients.(destinations)...))
 
     nt=DataFrames.names(target_quantities)
-    available_sources=filter(y->all(map(x->in(x,nt),ingredients(y.composition))),available_sources) # block any source that has extraneous ingredients 
+    available_sources=filter(y->all(map(x->in(x,destination_ingredients),ingredients(y.composition))),available_sources) # block any source that has extraneous ingredients 
     concentrations=stock_concentration_array(available_sources)
     needed_ingredients=map(x->!in(x,DataFrames.names(concentrations)),nt)
     if any(needed_ingredients)
