@@ -34,71 +34,81 @@ HumanConfiguration("n/a")
 function human_mixer(sources::Vector{T},destinations::Vector{U},robot::Human;quiet=false,timelimit=10) where {T <: JLIMS.Stock,U <:JLIMS.Stock}
  
     transfers=DataFrame()
+    allowed_ingredients=unique(vcat(map(x->ingredients(x.composition),destinations)...))
+    srcs=filter(y->all(map(x->in(x,allowed_ingredients),ingredients(y.composition))),sources)
 
-    for dest in destinations 
-        allowed_ingredients=ingredients(dest.composition)
-        srcs=filter(y->all(map(x->in(x,allowed_ingredients),ingredients(y.composition))),sources)
+    concentrations=stock_concentration_array(srcs)
+    target_quantities=stock_quantity_array(destinations)
+    concentrations=concentrations[:,DataFrames.names(target_quantities)]
+    
+    concentrations=Float64.(ustrip.(Matrix(concentrations)))
 
-        concentrations=stock_concentration_array(srcs)
-        target_quantities=stock_quantity_array(dest)
-        concentrations=concentrations[:,DataFrames.names(target_quantities)]
+    target_quantities=Float64.(ustrip.(Matrix(target_quantities)))
+    src_quants=map(x->x.quantity,srcs)
+    pref_units=preferred_stock_quantity.(srcs)
+    src_quants=uconvert.(pref_units,src_quants)
+    sq=ustrip.(src_quants)
+    S,I=size(concentrations)
+    D,I=size(target_quantities)
+    model=Model(Gurobi.Optimizer)
+    if quiet 
+        set_silent(model)
+    end 
+    set_attribute(model,"TimeLimit",timelimit)
+
         
-        concentrations=Float64.(ustrip.(Matrix(concentrations)))
-  
-        target_quantities=ustrip.(Vector(target_quantities[1,:]))
-        
-        S,I=size(concentrations)
+    @variable(model,q[1:S,1:D] >=0)
+    @variable(model,Iq[1:S,1:D],Bin)
 
-        model=Model(Gurobi.Optimizer)
-        if quiet 
-            set_silent(model)
+    @constraint(model, q'*concentrations .== target_quantities) # find the quantity of each stock needed to make the target 
+    for s in 1:S
+        for d in 1:D
+            @constraint(model, !Iq[s,d]=> {q[s,d]==0})
         end 
-        set_attribute(model,"TimeLimit",timelimit)
+    end 
+    for s in 1:S
+        @constraint(model, sum(q[s,:]) <= sq[s])
+    end 
 
-        
-        @variable(model,q[1:S] >=0)
-        @variable(model,Is[1:S],Bin)
+    @objective(model, Min,sum(Iq))
+    optimize!(model)
 
-        @constraint(model, q'*concentrations .== target_quantities') # find the quantity of each stock needed to make the target 
-
-        for s in 1:S
-            @constraint(model, !Is[s]=> {q[s]==0})
-        end 
-
-        @objective(model, Min,sum(Is))
-        optimize!(model)
-
-        quants=JuMP.value.(q)
+    quants=JuMP.value.(q)
 
 
-        
+    transfers=DataFrame()    
+    
+    for dest in destinations
         quantities=Any[]
-        for stock in sources
-            un=preferred_stock_quantity(stock)
-            if stock in srcs 
-                idx=findfirst(x->x==stock,srcs)
-                val=quants[idx]*un
-                if isa(val,Unitful.Mass)
-                    if 0u"g" <val < robot.properties.minMass
-                        error("The $val mass required for the stock in well #$(stock.well.id) is too small for a $(typeof(robot)) to accurately transfer")
-                    elseif  val > robot.properties.maxMass
-                        error("The $val mass required for the stock in well #$(stock.well.id) is too large for a $(typeof(robot)) to accurately transfer")
-                    end 
-                elseif isa(val,Unitful.Volume)
-                    if 0u"L" <val < robot.properties.minVol
-                        error("The $val volume required for the stock in well #$(stock.well.id) is too small for a $(typeof(robot)) to accurately transfer")
-                    elseif  val > robot.properties.maxVol
-                        error("The $val volume required for the stock in well #$(stock.well.id) is too large for a $(typeof(robot)) to accurately transfer")
-                    end 
+        for src in sources
+            un=preferred_stock_quantity(src)
+        if src in srcs 
+            s=findfirst(x->x==src,srcs)
+            d=findfirst(x->x==dest,destinations)
+            val=quants[s,d]*un
+            if isa(val,Unitful.Mass)
+                if 0u"g" <val < robot.properties.minMass
+                    error("The $val mass required for the stock in well #$(dest.well.id) is too small for a $(typeof(robot)) to accurately transfer")
+                elseif  val > robot.properties.maxMass
+                    error("The $val mass required for the stock in well #$(dest.well.id) is too large for a $(typeof(robot)) to accurately transfer")
                 end 
-                push!(quantities,quants[idx]*un) # commit the transfer to the transfers vector for this destination stock 
-                
-            else
-                push!(quantities,0*un) # commit a 0 to the transfers vector
+            elseif isa(val,Unitful.Volume)
+                if 0u"L" <val < robot.properties.minVol
+                        error("The $val volume required for the stock in well #$(dest.well.id) is too small for a $(typeof(robot)) to accurately transfer")
+                elseif  val > robot.properties.maxVol
+                        error("The $val volume required for the stock in well #$(dest.well.id) is too large for a $(typeof(robot)) to accurately transfer")
+                end 
             end 
+            push!(quantities,val) # commit the transfer to the transfers vector for this destination stock 
+                
+        else
+            push!(quantities,0*un) # commit a 0 to the transfers vector
+        end 
         end 
         transfers[:,Symbol("Well$(dest.well.id)")]=quantities
     end 
+   
+ 
 
     transfer_table=DataFrame(Source=Integer[],Destination=Integer[],Quantity=Real[],Unit=AbstractString[])
     r=nrow(transfers)
@@ -168,7 +178,7 @@ end
 stocks=JLD2.load("./src/Mixer/example_stocks.jld2")["stocks"]
 
 
-tt=human("/Users/BDavid/Desktop/",stocks,stocks,human_default;quiet=true)
+tt,pn=human("/Users/BDavid/Desktop/",stocks,stocks,human_default;quiet=true)
 
 
 

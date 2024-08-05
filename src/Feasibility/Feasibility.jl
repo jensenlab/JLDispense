@@ -134,6 +134,7 @@ function feasibility(sources::Vector{T},destinations::Vector{U},robot::Robot;qui
         if !JuMP.is_solved_and_feasible(model)
             throw(OverdraftError("Refills are needed of the following stocks",needed))
         end
-        return true  
+        println(JuMP.value.(q))
+        return  true 
 
 end 
