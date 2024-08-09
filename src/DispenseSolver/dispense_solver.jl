@@ -165,7 +165,8 @@ end
 function dispense_solver(sources::Vector{T},destinations::Vector{U},robot::Robot,secondary_objectives...;quiet::Bool=true,timelimit::Real=10,pad::Real=1.25,slack_tolerance::Real=0,overdraft_tolerance::Real=1e-8,priority::Dict{JLIMS.Ingredient,UInt64}=Dict{JLIMS.Ingredient,UInt64}(),kwargs...) where {T<: JLIMS.Stock,U<:JLIMS.Stock}
     # check inputs for issues 
     pad >= 1 ? nothing : error("padding factor must be greater than or equal to 1")
-    0 <= tolerance ? nothing : error("Slack tolerance must be nonnegative")
+    0 <= overdraft_tolerance ? nothing : error("overdraft tolerance must be nonnegative")
+    0 <= slack_tolerance ? nothing : error("Slack tolerance must be nonnegative")
     # check sources and destination for compatibility issues. If sources have an issue, ignore them. If the destinations have an issue, throw an error. 
     available_sources= filter(x->in(typeof(x),robot.properties.compatible_stocks),sources)
     if hasproperty(robot.properties,:positions)
