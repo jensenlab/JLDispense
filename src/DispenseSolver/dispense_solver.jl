@@ -162,7 +162,7 @@ end
 
 
 
-function dispense_solver(sources::Vector{T},destinations::Vector{U},robot::Robot,secondary_objectives...;quiet::Bool=true,timelimit::Real=10,pad::Real=1.25,tolerance::Real=0,priority::Dict{JLIMS.Ingredient,UInt64}=Dict{JLIMS.Ingredient,UInt64}(),kwargs...) where {T<: JLIMS.Stock,U<:JLIMS.Stock}
+function dispense_solver(sources::Vector{T},destinations::Vector{U},robot::Robot,secondary_objectives...;quiet::Bool=true,timelimit::Real=10,pad::Real=1.25,slack_tolerance::Real=0,overdraft_tolerance::Real=1e-8,priority::Dict{JLIMS.Ingredient,UInt64}=Dict{JLIMS.Ingredient,UInt64}(),kwargs...) where {T<: JLIMS.Stock,U<:JLIMS.Stock}
     # check inputs for issues 
     pad >= 1 ? nothing : error("padding factor must be greater than or equal to 1")
     0 <= tolerance ? nothing : error("Slack tolerance must be nonnegative")
@@ -281,7 +281,7 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robot::Robot
     
         for i in 1:I
             if weights[i]
-                delta=tolerance * dq[:,i] # delta is the tolerance we give to updating the slack in higher priority levels, it is some fraction of the dispense target quantity for every destination. Wiggle room for the slack in future iterations 
+                delta=slack_tolerance * dq[:,i] # delta is the tolerance we give to updating the slack in higher priority levels, it is some fraction of the dispense target quantity for every destination. Wiggle room for the slack in future iterations 
                 current_slack=current_slacks[:,i]
                 @constraint(model, slacks[:,i] .>= -current_slack .- delta)
                 @constraint(model, slacks[:,i] .<= current_slack .+ delta)
@@ -306,7 +306,7 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robot::Robot
     sources_needed=sum(quants,dims=2)
 
     overdrafts = sources_needed .- cap_vals
-    if any(overdrafts .>0) 
+    if any(overdrafts .>overdraft_tolerance) 
         overdraft_dict=Dict{JLIMS.Stock,Unitful.Quantity}()
         for i in findall(x-> x > 0 ,overdrafts)
             overdraft_dict[available_sources[i]] = overdrafts[i] * preferred_stock_quantity(available_sources[i])
