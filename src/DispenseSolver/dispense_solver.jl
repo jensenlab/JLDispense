@@ -162,6 +162,27 @@ end
 
 
 
+function enforce_maxShots!(model)
+    S,D=size(model[:q])
+    for s in 1:S
+        @constraint(model,q[s,:] .<= model[:maxShots][s])
+    end 
+    optimize!(model) 
+end
+
+function minimize_overshots!(model)
+    S,D=size(model[:q])
+    @variable(model,overshot_indicator[1:S,1:D],Bin)
+    for s in 1:S
+        for d in 1:D
+            @constraint(model,!overshot_indicator[s,d] => {q[s,d]>model[:maxShots][s]})
+        end 
+    end 
+    optimize!(model) 
+end
+
+
+
 function dispense_solver(sources::Vector{T},destinations::Vector{U},robot::Robot,secondary_objectives...;quiet::Bool=true,timelimit::Real=10,pad::Real=1.25,slack_tolerance::Real=0,overdraft_tolerance::Real=1e-8,priority::Dict{JLIMS.Ingredient,UInt64}=Dict{JLIMS.Ingredient,UInt64}(),kwargs...) where {T<: JLIMS.Stock,U<:JLIMS.Stock}
     # check inputs for issues 
     pad >= 1 ? nothing : error("padding factor must be greater than or equal to 1")
@@ -184,6 +205,15 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robot::Robot
     
         available_sources= filter(x->in(x.well.container,compatible_containers),avialable_sources) 
     end
+
+    minVol= ustrip(uconvert(u"µL",hasproperty(robot.properties,:minVol) ? robot.properties.minVol : 0u"µL"))
+    maxVol=ustrip(uconvert(u"µL",hasproperty(robot.properties,:maxVol) ? robot.properties.maxVol : Inf*u"µL"))
+    minMass=ustrip(uconvert(u"g",hasproperty(robot.properties,:minMass) ? robot.properties.minMass : 0u"g"))
+    maxMass=ustrip(uconvert(u"g",hasproperty(robot.properties,:maxMass) ? robot.properties.maxMass : Inf*u"g"))
+
+    maxShotDict=Dict(JLIMS.SolidStock => maxMass, JLIMS.LiquidStock => maxVol)
+    minShotDict=Dict(JLIMS.SolidStock => minMass, JLIMS.LiquidStock => minVol)
+
     
     # Gather all ingredients contained in the sources, destinations, and priority list 
     source_ingredients= unique(vcat(map(x->ingredients(x.composition),available_sources)...))
@@ -241,12 +271,17 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robot::Robot
         set_silent(model)
     end 
     set_attribute(model,"TimeLimit",timelimit)
+    @variable(model, minShots[1:S] in Parameter(map(x->minShotDict[typeof(x)],available_sources)))
+    @variable(model, maxShots[1:S] in Parameter(map(x->maxShotDict[typeof(x)],available_sources)))
 
-    @variable(model, q[1:S,1:D]>=0) # q[s,d] = quantity of stock s transfered to stock d 
+
+    @variable(model, q[i=1:S,1:D] in Semicontinuous(minShots[i],Inf)) # q[s,d] = quantity of stock s transfered to stock d. The quantity must not be lower than the minimum shot quantity for the robot for that type of stock, unless it is zero (Semicontinuous variable)
     @variable(model,slacks[1:D,1:I]) # slack variables to measure the difference between the dispenses and the target quantities for each ingredient of each destination
     @variable(model, lw[1:L]>=0) # continuous variable to measure the total volume dispensed from each piece of labware 
     @variable(model, caps[i=1:S] in Parameter(source_quantities[i]/pad)) # save a parameter for the volume of each available source 
-    
+
+
+
     @constraint(model, q'*sc .- slacks .== dq ) # create the destinations with the sources, allowing for some slack
 
     for l in 1:L 

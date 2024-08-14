@@ -529,6 +529,7 @@ function cobra_mixer(sources::Vector{JLIMS.Stock},destinations::Vector{JLIMS.Sto
       error("Robot $(robot.name) is incapable of making at least one of the requested stocks")
   end 
 
+
   source_labware=unique(map(x->x.well.labwareid,sources))
 
   sl_idx=map(x->findall(y->y.well.labwareid==x,sources),source_labware)
