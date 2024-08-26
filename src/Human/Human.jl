@@ -1,5 +1,6 @@
 
 struct HumanProperties <: RobotProperties
+    isdiscrete::Bool
     minVol::Unitful.Volume
     maxVol::Unitful.Volume
     minMass::Unitful.Mass 
@@ -26,14 +27,18 @@ end
 
 
 human_default=Human("",
-HumanProperties(0.1u"µL",100u"L",0.1u"mg",100u"kg",[JLIMS.SolidStock,JLIMS.LiquidStock,JLIMS.EmptyStock]),
+HumanProperties(false,0.1u"µL",100u"L",0.1u"mg",100u"kg",[JLIMS.SolidStock,JLIMS.LiquidStock,JLIMS.EmptyStock]),
+HumanConfiguration("n/a")
+)
+
+omnipotent_robot= Human("Omnipotent_Robot",
+HumanProperties(false,0u"µL",Inf*u"µL",0u"g",Inf * u"g",[JLIMS.SolidStock,JLIMS.LiquidStock,JLIMS.EmptyStock]),
 HumanConfiguration("n/a")
 )
 
 
 
-
-function human_instructor(directory::AbstractString, protocol_name::AbstractString,design::DataFrame,sources::Vector{T},destinations::Vector{U},robot::Human) where {T <: JLIMS.Stock,U <:JLIMS.Stock}
+function human(directory::AbstractString, protocol_name::AbstractString,design::DataFrame,sources::Vector{T},destinations::Vector{U},robot::Human) where {T <: JLIMS.Stock,U <:JLIMS.Stock}
     nrow(design) ==length(sources) ? nothing : error("number of rows in the design must equal the number of source stocks")
     ncol(design)== length(destinations) ? nothing : error("number of columns in the design must equal the number of destination stocks")
 
@@ -49,20 +54,24 @@ function human_instructor(directory::AbstractString, protocol_name::AbstractStri
 end 
 
 
-function human(directory::AbstractString,protocol_name::AbstractString,sources::Vector{T},destinations::Vector{U},robot::Human;kwargs...) where {T <: JLIMS.Stock,U <:JLIMS.Stock}
+function mixer(directory::AbstractString,sources::Vector{T},destinations::Vector{U},robot::Human;kwargs...) where {T <: JLIMS.Stock,U <:JLIMS.Stock}
     design=dispense_solver(sources,destinations,robot,minimize_overdrafts!,minimize_labware!,minimize_sources!,minimize_transfers!;pad=1.1,kwargs...)
-    transfer_table=human_instructor(directory,protocol_name,design,sources,destinations,robot)
-    return transfer_table
+    protocol_name=random_protocol_name()
+    transfer_table=human(directory,protocol_name,design,sources,destinations,robot)
+    return protocol_name, transfer_table
 end 
 
 
 #= Test Code
 
 
-stocks=JLD2.load("./src/Mixer/example_stocks.jld2")["stocks"]
+using JLDispense,JLD2
 
+sources=JLD2.load("./src/Mixer/dwp_stocks.jld2")["stocks"]
+destinations=JLD2.load("./src/Mixer/stock_targets.jld2")["out"]
+alts=JLD2.load("./src/Mixer/example_stocks.jld2")["stocks"]
 
-tt,pn=human("/Users/BDavid/Desktop/",stocks,stocks,human_default;quiet=true)
+protocol_name,transfer_table=mixer("/Users/BDavid/Desktop/",sources,destinations,human_default)
 
 
 
