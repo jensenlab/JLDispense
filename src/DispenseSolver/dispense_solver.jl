@@ -230,7 +230,7 @@ end
 
 
 
-function dispense_solver(sources::Vector{T},destinations::Vector{U},robot::Robot,secondary_objectives...;quiet::Bool=true,timelimit::Real=10,pad::Real=1.25,slack_tolerance::Real=0,overdraft_tolerance::Real=1e-8,require_nonzero::Bool=true,return_model::Bool=false,obj_tol=0.01,priority::Dict{JLIMS.Ingredient,UInt64}=Dict{JLIMS.Ingredient,UInt64}(),kwargs...) where {T<: JLIMS.Stock,U<:JLIMS.Stock}
+function dispense_solver(sources::Vector{T},destinations::Vector{U},robot::Robot,secondary_objectives...;quiet::Bool=true,timelimit::Real=10,pad::Real=1.25,slack_tolerance::Real=0,overdraft_tolerance::Real=1e-8,require_nonzero::Bool=true,return_model::Bool=false,obj_tolerance=1e-6,obj_cutoff=1e-3,priority::Dict{JLIMS.Ingredient,UInt64}=Dict{JLIMS.Ingredient,UInt64}(),kwargs...) where {T<: JLIMS.Stock,U<:JLIMS.Stock}
    
     
     
@@ -327,11 +327,15 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robot::Robot
 
     for ing in destination_ingredients
         if !in(ing,keys(priority))
-            priority[ing]=UInt64(0) # any ingredient needed for any of the destination stocks is assigned 0 level priority unless the user has already explicitly defined a priority for that ingredient
+            val=UInt64(0) # any ingredient needed for any of the destination stocks is assigned 0 level priority unless the user has already explicitly defined a priority for that ingredient
+            if robot.properties.isdiscrete
+                val=UInt64(1) # we can't hit targets exactly with discrete instruments, so we give destination target ingredients a priority level 1 
+            end 
+            priority[ing]=val 
         end 
     end 
     for ing in source_ingredients
-        if !in(ing,keys(priority)) # if the user hasnt specified a source ingredient priority or included it in the design (see above), assume it is priority 0. These ingredients will have a target concentration of 0 that must be hit exactly (they will be blocked)
+        if !in(ing,keys(priority)) # if the user hasn't specified a source ingredient priority or included it in the design (see above), assume it is priority 0. These ingredients will have a target concentration of 0 that must be hit exactly (they will be blocked, regardless of a discrete or continuous robot
             priority[ing]=UInt64(0) 
         end 
     end 
@@ -357,7 +361,7 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robot::Robot
         set_silent(model)
     end 
     set_attribute(model,"TimeLimit",timelimit)
-    set_attribute(model,"Cutoff",obj_tol* sum(dq.^2)) # reject any solutions that are larger than the objective tolerance, which is a percentage of the sum squared target quantities. 
+
     # Define constants 
     @variable(model, minShots[1:S] in Parameter.(minshot_param))
     @variable(model, maxShots[1:S] in Parameter.(maxshot_param))
@@ -371,25 +375,30 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robot::Robot
      
 
     @constraint(model, q'*sc .- slacks .== dq ) # create the destinations with the sources, allowing for some slack
-    @constraint(model, !qi .=> {q .== 0}) # tie the transfer indicator to the transfers
 
 
     if robot.properties.isdiscrete 
         println("discrete problem")
         set_integer.(q) # q is an integer for discrete problems 
+        @constraint(model, q .>= qi) # enforce activity constraint
     else 
         println("semi-continuous problem")
         for s in 1:S 
             @constraint(model, q[s,:] .>= minshotvals[s]*qi[s,:]) # if a dispense is active it must be larger than the minimum shot volume for the robot. This formulates q as a semicontinuous variable from (minshotval, Inf)
         end 
-        for i in 1:I
-            if priority[all_ingredients[i]] == 0
-                for d in 1:D
-                    @constraint(model, slacks[d,i]==0) # priority 0 ingredients must hit the target exactly for each destination. The slack must be zero. We can only enforce this for semicontinuous dispensers. 
-                end 
+    end
+    for i in 1:I
+        if priority[all_ingredients[i]] == 0
+            for d in 1:D
+                @constraint(model, slacks[d,i]==0) # priority 0 ingredients must hit the target exactly for each destination. The slack must be zero. We can only enforce this for semicontinuous dispensers. 
             end 
         end 
-        
+    end 
+    
+    for s in 1:S
+        for d in 1:D 
+            @constraint(model, !qi[s,d] => {q[s,d]== 0}) # tie the transfer indicator to the transfers
+        end 
     end 
 
     if require_nonzero 
@@ -421,18 +430,24 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robot::Robot
             end 
         end 
         set_objective_sense(model, MOI.FEASIBILITY_SENSE)
+        set_attribute(model,"Cutoff",obj_cutoff* sum(weights'.*dq.^2)) # reject any solutions that are larger than the objective tolerance, which is a percentage of the sum squared target quantities.
+        set_attribute(model, "BestObjStop",obj_tolerance*sum(weights'.*dq.^2)) 
         @objective(model, Min,sum(weights'.*(slacks.^2))) # penalize large slacks, search for q that minimize slacks.
         optimize!(model)
 
         # Check for optimality and feasibility 
         term = termination_status(model)
         if term == MOI.OPTIMAL || term == MOI.OBJECTIVE_LIMIT
-            println("Optimal Solution Found For Level $level")
+            if primal_status(model)==MOI.FEASIBLE_POINT
+                println("Optimal Solution Found For Level $level")
+            elseif primal_status(model)==MOI.NO_SOLUTION
+                throw(error("No solution exists that is better than the set objective cutoff $(obj_cutoff*100)%."))
+            end 
         elseif term == MOI.TIME_LIMIT
             if primal_status(model) == MOI.FEASIBLE_POINT
                 @warn "a solution was found for level $level, but it may be sub-optimal because the solver stopped due to reaching its $(timelimit)s  time limit."
             else 
-                throw(error("the solver was unable to find a solution for level $level in the $(timelimit)s time limit."))
+                throw(error("the solver was unable to find a feasible solution for level $level in the $(timelimit)s time limit."))
             end 
         elseif term == MOI.INFEASIBLE || term == MOI.INFEASIBLE_OR_UNBOUNDED
             println("infeasible solution")

@@ -1,36 +1,45 @@
 
+struct NimbusProperties <: RobotProperties 
+    isdiscrete::Bool
+    minVol::Unitful.Volume
+    maxVol::Unitful.Volume
+    maxASP::Unitful.Volume
+    positions::Vector{DeckPosition}
+    compatible_stocks::Vector{DataType}
+  end 
+  
+  mutable struct NimbusConfiguration <: RobotConfiguration
+    max_tip_use::Integer
+    comment::AbstractString
+  end
+  
+  struct Nimbus <:Robot
+    name::AbstractString 
+    properties::NimbusProperties 
+    configuration::NimbusConfiguration
+  end
 
-struct NimbusDispenseList
-    design::DataFrame
-    source::String
-    destination::String
-end 
 
 
 
 
-struct NimbusRack
-    name::String
-    size::Tuple{Int64,Int64}
-    labware::ContainerName
-    is_source::Bool
-end 
+
 
 
 
 # Define our available racks
 #15 mL tube
-TubeRack15ML_0001=NimbusRack("TubeRack15ML_0001",(4,6),containers[:conical_15ml],true)
+TubeRack15ML_0001=DeckPosition("TubeRack15ML_0001",true,24,[conical_15])
 # 50 mL tube
-TubeRack50ML_0001=NimbusRack("TubeRack50ML_0001",(2,3),containers[:conical_50ml],true)
-TubeRack50ML_0002=NimbusRack("TubeRack50ML_0002",(2,3),containers[:conical_50ml],true)
-TubeRack50ML_0003=NimbusRack("TubeRack50ML_0003",(2,3),containers[:conical_50ml],true)
-TubeRack50ML_0004=NimbusRack("TubeRack50ML_0004",(2,3),containers[:conical_50ml],true)
-TubeRack50ML_0005=NimbusRack("TubeRack50ML_0005",(2,3),containers[:conical_50ml],true)
-TubeRack50ML_0006=NimbusRack("TubeRack50ML_0006",(2,3),containers[:conical_50ml],true)
+TubeRack50ML_0001=DeckPosition("TubeRack50ML_0001",true,6,[conical_50])
+TubeRack50ML_0002=DeckPosition("TubeRack50ML_0002",true,6,[conical_50])
+TubeRack50ML_0003=DeckPosition("TubeRack50ML_0003",true,6,[conical_50])
+TubeRack50ML_0004=DeckPosition("TubeRack50ML_0004",true,6,[conical_50])
+TubeRack50ML_0005=DeckPosition("TubeRack50ML_0005",true,6,[conical_50])
+TubeRack50ML_0006=DeckPosition("TubeRack50ML_0006",true,6,[conical_50])
 # 2 mL deep well plate
-Cos_96_DW_2mL_0001=NimbusRack("Cos_96_DW_2mL_0001",(1,1),containers[:dWP96_2ml],false)
-Cos_96_DW_2mL_0002=NimbusRack("Cos_96_DW_2mL_0002",(1,1),containers[:dWP96_2ml],false)
+Cos_96_DW_2mL_0001=DeckPosition("Cos_96_DW_2mL_0001",false,1,[dwp96_2ml,wp96])
+Cos_96_DW_2mL_0002=DeckPosition("Cos_96_DW_2mL_0002",false,1,[dwp96_2ml,wp96])
 
 
 default_nimbus_config=[
@@ -43,42 +52,43 @@ default_nimbus_config=[
     Cos_96_DW_2mL_0001
 ]
 
-function convert_nimbus_design(design::DataFrame, source::String,destination::String;nimbus_config::Vector{NimbusRack}=default_nimbus_config,kwargs...)
+nimbus_default=Nimbus("Nimbus Default",
+NimbusProperties(false,50u"µL",1u"mL",1000u"µL",default_nimbus_config,[JLIMS.LiquidStock]),
+NimbusConfiguration(25,"default")
+)
 
-    rack_codes=map(x->x.name,nimbus_config)
+function convert_nimbus_design(design::DataFrame,sources::Vector{T},destinations::Vector{U},source_deck::DeckPosition,destination_deck::DeckPosition,robot::Nimbus) where {T <: JLIMS.Stock,U <:JLIMS.Stock}
 
 
-    if !in(source,rack_codes) || !in(destination,rack_codes)
+    if !in(source_deck,robot.properties.positions) || !in(destination_deck,robot.properties.positions)
         ArgumentError("Provide a valid Source Rack and Destination Rack Code")
     end 
-    nimbus_config_dict=Dict(rack_codes .=> nimbus_config)
 
-    dw=prod(nimbus_config_dict[destination].size)*prod(nimbus_config_dict[destination].labware.shape)
-    if nrow(design) != dw
-        ArgumentError("Number of rows in design must match the size of the destination")
+    if ncol(design) != length(destinations)
+        ArgumentError("Number of columns in design must match the size of the destination")
     end 
 
-    sw = prod(nimbus_config_dict[source].size)*prod(nimbus_config_dict[source].labware.shape)
-    if ncol(design) != sw
-        ArgumentError("Number of columns in design must match the size of the source")
+
+    if nrow(design) != length(sources)
+        ArgumentError("Number of rows in design must match the size of the source")
     end 
 
     source_id=String[]
     source_position=Int64[]
-    volume=Float64[]
+    volume=Unitful.Volume[]
     destination_id=String[]
     destination_position=String[]
     alphabet=collect('A':'Z')
-    R,C=nimbus_config_dict[destination].labware.shape
-    for col in 1:ncol(design)
-        for row in 1:nrow(design)
-            push!(source_id,source)
-            push!(source_position,col)
+    R,C=destinations[1].well.container.shape
+    for row in 1:nrow(design)
+        for col in 1:ncol(design)
+            push!(source_id,source_deck.name)
+            push!(source_position,row)
             push!(volume,design[row,col])
-            push!(destination_id,destination)
+            push!(destination_id,destination_deck.name)
 
-            c=cld(row,R)
-            r=row-R*(c-1)
+            c=cld(col,R)
+            r=col-R*(c-1)
             pos=string(alphabet[r],c)
             push!(destination_position,pos)
         end 
@@ -106,96 +116,127 @@ Create Hamilton Nimbus dipsense instructions
   ## Keyword Arguments
   * `nimbus_config`: A vector of NimbusRack objects that specify the configuration of the numbus. the defual configuration is 5 50ml conical racks and a well plate rack. 
 """
-function nimbus(dispense_list::NimbusDispenseList, filepath::String;kwargs...)
+function nimbus(directory::AbstractString, protocol_name::AbstractString, design::DataFrame, sources::Vector{T}, destinations::Vector{U}, robot::Nimbus;kwargs...) where {T <: JLIMS.Stock,U <:JLIMS.Stock}
+    source_decks=filter(x->x.is_source,robot.properties.positions)
+    s_slots=map(x->x.slots,source_decks)
+    s_labware=unique(map(x->x.well.labwareid,sources))
 
-    df=convert_nimbus_design(dispense_list.design,dispense_list.source,dispense_list.destination;kwargs...)
-    n=nrow(df)
-    dispense_df=DataFrame([[],[],[],[],[],],names(df))
-    for i = 1:n 
-        vol=df[i,"Volume (uL)"]
-        while vol >0 
-            dfrow=deepcopy(df[i,:])
-            shotvol=min(1000,vol) # maximum shot volume of 1 ml 
-            dfrow["Volume (uL)"]=shotvol
-            push!(dispense_df,dfrow)
-            vol-=shotvol
+    S=length(s_labware)
+    sum(s_slots) >= S ? nothing : error("source labware ($S) exceed the number of available Nimbus source slots $(s_slots)")
+
+    destination_decks=filter(x->!x.is_source,robot.properties.positions)
+    d_slots=map(x->x.slots,destination_decks)
+    d_labware=unique(map(x->x.well.labwareid,destinations))
+    D=length(d_labware)
+    sum(d_slots) >= D ? nothing : error("destination labware ($D) exceed the number of available Nimbus destination slots $(d_slots)")
+    
+
+    s_idxs=[findall(x->x.well.labwareid==i,sources) for i in s_labware]
+    d_idxs=[findall(x->x.well.labwareid==i,destinations) for i in d_labware]
+    cum_s_slots=vcat(0,cumsum(s_slots))
+    cum_d_slots=vcat(0,cumsum(d_slots))
+    s_runs=findfirst(x->x>=S,cumsum(s_slots))
+    d_runs=findfirst(x->x>=D,cumsum(d_slots))
+    sl_set=[(cum_s_slots[i]+ 1):min(cum_s_slots[i+1],S) for i in 1:s_runs]
+    dl_set=[(cum_d_slots[i] + 1):min(cum_d_slots[i+1],D) for i in 1:d_runs]
+
+    dispenses=DataFrame("Source Labware ID"=>AbstractString[],"Source Position ID"=>Integer[],"Volume (uL)"=>Real[],"Destination Labware ID"=>AbstractString[],"Destination Position ID"=>AbstractString[])
+    for d in 1:d_runs
+        for s in 1:s_runs 
+            ss=vcat(s_idxs[sl_set[s]]...)
+            dd=vcat(d_idxs[dl_set[d]]...)
+            df=convert_nimbus_design(design[ss,dd],sources,destinations,source_decks[s],destination_decks[d],robot)
+
+            n=nrow(df)
+            dispense_df=DataFrame([[],[],[],[],[],],names(df))
+            for i = 1:n 
+                vol=df[i,"Volume (uL)"]
+                while vol > 1e-6*u"µL" 
+                    shotvol=min(robot.properties.maxVol,vol) # maximum shot volume of 1 ml 
+                    push!(dispense_df,(df[i,"Source Labware ID"],df[i,"Source Position ID"],ustrip(uconvert(u"µL",shotvol)),df[i,"Destination Labware ID"],df[i,"Destination Position ID"]))
+                    vol-=shotvol
+                end 
+            end 
+            append!(dispenses,dispense_df)
         end 
     end 
 
-    n=nrow(dispense_df)
+    n=nrow(dispenses)
     
     change_tip=zeros(Int64,n)
     for i in 2:n
-        if dispense_df[i,"Source Position ID"] != dispense_df[i-1,"Source Position ID"]
+        if dispenses[i,"Source Position ID"] != dispenses[i-1,"Source Position ID"]
             change_tip[i]=1
         end 
     end 
 
-    windowsize=25 
-    for i in 1:n-windowsize+1
+    windowsize=robot.configuration.max_tip_use
+    for i in 1:n-windowsize+1   
         window=change_tip[i:i+windowsize-1]
         if sum(window)==0
             change_tip[i+windowsize-1]=1
         end 
     end 
-    dispense_df[!,"Change Tip Before"].= change_tip
+    dispenses[!,"Change Tip Before"].= change_tip
     
-
+    full_dir=joinpath(directory,protocol_name)
+    if ~isdir(full_dir)
+        mkdir(full_dir)
+    end 
     
-    CSV.write(filepath,dispense_df)
+    CSV.write(joinpath(full_dir,protocol_name*".csv"),dispenses)
+    write(joinpath(full_dir,"config.json"),JSON.json(robot))
+    return make_transfer_table(sources,destinations,design)
 end 
 
 
-function nimbus(dispense_list::Vector{NimbusDispenseList}, filepath::String;kwargs...)
-    designs=map(x->x.design,dispense_list)
-    sources=map(x->x.source,dispense_list)
-    destinations=map(x->x.destination,dispense_list)
-    dfs=convert_nimbus_design.(designs,sources,destinations;kwargs...)
-    df=vcat(dfs...)
-    n=nrow(df)
-    dispense_df=DataFrame([[],[],[],[],[],],names(df))
-    for i = 1:n 
-        vol=df[i,"Volume (uL)"]
-        while vol >0 
-            dfrow=deepcopy(df[i,:])
-            shotvol=min(1000,vol)
-            dfrow["Volume (uL)"]=shotvol
-            push!(dispense_df,dfrow)
-            vol-=shotvol
+function mixer(directory::AbstractString,sources::Vector{T},destinations::Vector{U},robot::Nimbus,kwargs...) where {T <: JLIMS.Stock,U <:JLIMS.Stock}
+    design=dispense_solver(sources,destinations,robot,minimize_overdrafts!,minimize_sources!,minimize_transfers!;pad=1.25,kwargs...)
+
+
+    srcs_needed=filter(x->sum(design[x,:]) > 0u"µL",eachindex(sources))
+
+    srcs=sources[srcs_needed]
+
+    des=design[srcs_needed,:]
+
+    s_slots=sum(map(x->x.slots,filter(x->x.is_source,robot.properties.positions)))
+    s_labware=unique(map(x->x.well.labwareid,srcs))
+    S=length(s_labware)
+
+    d_slots=sum(map(x->x.slots,filter(x->!x.is_source,robot.properties.positions)))
+    d_labware=unique(map(x->x.well.labwareid,destinations))
+    D=length(d_labware)
+    outer_runs=cld(S,s_slots)
+    inner_runs=cld(D,d_slots)
+
+    sl_set=[(s_slots*(i-1) + 1):min(s_slots*(i),S) for i in 1:outer_runs]
+    dl_set=[(d_slots*(i-1) + 1):min(d_slots*(i),D) for i in 1:inner_runs]
+
+    s_idxs=[findall(x->in(x.well.labwareid,s_labware[sl_set[i]]),srcs) for i in 1:outer_runs]
+    d_idxs=[findall(x->in(x.well.labwareid,d_labware[dl_set[i]]),destinations) for i in 1:inner_runs]
+    tt=DataFrame[]
+    pn=AbstractString[]
+    for i in 1:outer_runs 
+        for j in 1:inner_runs 
+            protocol_name=random_protocol_name()
+            push!(tt,nimbus(directory,protocol_name,des[s_idxs[i],d_idxs[j]],srcs[s_idxs[i]],destinations[d_idxs[j]],robot))
+            push!(pn,protocol_name)
         end 
     end 
+    return pn,tt
 
-    n=nrow(dispense_df)
-    
-    change_tip=zeros(Int64,n)
-    for i in 2:n
-        if dispense_df[i,"Source Position ID"] != dispense_df[i-1,"Source Position ID"]
-            change_tip[i]=1
-        end 
-    end 
-
-    windowsize=25 
-    for i in 1:n-windowsize+1
-        window=change_tip[i:i+windowsize-1]
-        if sum(window)==0
-            change_tip[i+windowsize-1]=1
-        end 
-    end 
-    dispense_df[!,"Change Tip Before"].= change_tip
-    
-
-    
-    CSV.write(filepath,dispense_df)
 end 
-
 
 #= 
-using DataFrames, JLDispense
+using JLDispense,JLD2,JLIMS
 
-design=100*ones(96,6)
-
-dl=NimbusDispenseList(DataFrame(design,:auto),"TubeRack50ML_0001","Cos_96_DW_2mL_0001")
-nimbus(dl,"/Users/BDavid/Desktop/test_nimbus.csv")
+sources=JLD2.load("./src/Mixer/dwp_stocks.jld2")["stocks"]
+destinations=JLD2.load("./src/Mixer/stock_targets.jld2")["out"]
+alts=JLD2.load("./src/Mixer/example_stocks.jld2")["stocks"]
+all_actives=JLD2.load("./src/Mixer/all_actives.jld2")["all_actives"]
+t,m=dispense_solver(all_actives,sources,nimbus_default;return_model=true)
+protocol_name,transfer_table=mixer("/Users/BDavid/Desktop/",sources,destinations,nimbus_default)
 
 =#
 
