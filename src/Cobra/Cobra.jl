@@ -592,18 +592,24 @@ end
 
 function mixer(directory::AbstractString,sources::Vector{T},destinations::Vector{U},robot::Cobra;kwargs...) where  {T <: JLIMS.Stock,U <:JLIMS.Stock}
   design=dispense_solver(sources,destinations,robot,minimize_labware_crossover!,minimize_overdrafts!,minimize_overshots!,minimize_transfers!,minimize_sources!)
+
+  srcs_needed=filter(x->ustrip(sum(design[x,:])) > 0,eachindex(sources))
+
+  srcs=sources[srcs_needed]
+
+  des=design[srcs_needed,:]
   dest_labware=unique(map(x->x.well.labwareid,destinations))
   dest_idxs=[findall(x->x.well.labwareid==i,destinations) for i in dest_labware]
-  src_labware=unique(map(x->x.well.labwareid,sources))
-  src_idxs=[findall(x->x.well.labwareid==i,sources) for i in src_labware]
+  src_labware=unique(map(x->x.well.labwareid,srcs))
+  src_idxs=[findall(x->x.well.labwareid==i,srcs) for i in src_labware]
   tt=DataFrame[]
   pn=AbstractString[]
   for i in eachindex(src_labware)
     for j in eachindex(dest_labware)
-        dispenses=design[src_idxs[i],dest_idxs[j]]
+        dispenses=des[src_idxs[i],dest_idxs[j]]
         if sum(Matrix(dispenses)) > 0u"µL"
             protocol_name=random_protocol_name()
-            transfer_table=cobra(directory,protocol_name,dispenses,sources,destinations,robot;kwargs...)
+            transfer_table=cobra(directory,protocol_name,dispenses,srcs,destinations,robot;kwargs...)
             push!(pn,protocol_name)
             push!(tt,transfer_table)
         end 

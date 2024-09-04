@@ -174,7 +174,7 @@ function mixer(directory::AbstractString,sources::Vector{T},destinations::Vector
     design=dispense_solver(sources,destinations,robot,minimize_overdrafts!,minimize_sources!,minimize_transfers!;pad=1.1,kwargs...)
 
 
-    srcs_needed=filter(x->sum(design[x,:]) > 0u"µL",eachindex(sources))
+    srcs_needed=filter(x->ustrip(sum(design[x,:])) > 0,eachindex(sources))
 
     srcs=sources[srcs_needed]
 

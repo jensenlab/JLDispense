@@ -194,7 +194,7 @@ function mixer(directory::AbstractString,sources::Vector{T},destinations::Vector
     design=dispense_solver(sources,destinations,robot,minimize_overdrafts!,minimize_sources!,minimize_transfers!;pad=1.25,kwargs...)
 
 
-    srcs_needed=filter(x->sum(design[x,:]) > 0u"µL",eachindex(sources))
+    srcs_needed=filter(x->ustrip(sum(design[x,:])) > 0,eachindex(sources))
 
     srcs=sources[srcs_needed]
 
@@ -236,7 +236,7 @@ destinations=JLD2.load("./src/Mixer/stock_targets.jld2")["out"]
 alts=JLD2.load("./src/Mixer/example_stocks.jld2")["stocks"]
 all_actives=JLD2.load("./src/Mixer/all_actives.jld2")["all_actives"]
 t,m=dispense_solver(all_actives,sources,nimbus_default;return_model=true)
-protocol_name,transfer_table=mixer("/Users/BDavid/Desktop/",sources,destinations,nimbus_default)
+protocol_name,transfer_table=mixer("/Users/BDavid/Desktop/",all_actives,sources,nimbus_default)
 
 =#
 

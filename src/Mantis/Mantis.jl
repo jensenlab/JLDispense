@@ -100,13 +100,19 @@ end
 function mixer(directory::AbstractString,sources::Vector{T},destinations::Vector{U},robot::Mantis,kwargs...) where {T <: JLIMS.Stock,U <:JLIMS.Stock}
 
   design=dispense_solver(sources,destinations,robot,minimize_overdrafts!,minimize_sources!,minimize_transfers!;pad=1.1,kwargs...)
+
+  srcs_needed=filter(x->ustrip(sum(design[x,:])) > 0,eachindex(sources))
+
+  srcs=sources[srcs_needed]
+
+  des=design[srcs_needed,:]
   all_labware=unique(map(x->x.well.labwareid,destinations))
   dest_idxs=[findall(x->x.well.labwareid==i,destinations) for i in all_labware]
   tt=DataFrame[]
   pn=AbstractString[]
   for i in eachindex(all_labware)
     protocol_name=random_protocol_name()
-    push!(tt,mantis(directory,protocol_name,design[:,dest_idxs[i]],sources,destinations[dest_idxs[i]],robot))
+    push!(tt,mantis(directory,protocol_name,des[:,dest_idxs[i]],srcs,destinations[dest_idxs[i]],robot))
     push!(pn,protocol_name)
   end 
   return pn,tt
