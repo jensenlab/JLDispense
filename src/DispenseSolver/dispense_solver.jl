@@ -249,7 +249,7 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robot::Robot
                 throw(StockCompatibilityError("the robot $(robot.name) is not compatible with a $(typeof(destinations[d]))."))
             end 
         end 
-        if !any(map(x->typeof(x.compatible_containers)==Missing,robot.properties.positions))
+        if !any(map(x->typeof(x.compatible_containers)==Missing,filter(x->x.is_source==false,robot.properties.positions)))
             compatible_destination_containers=unique(vcat(map(x->x.compatible_containers,filter(x->x.is_source==false && typeof(x.compatible_containers) != Missing,robot.properties.positions))...))
             container_compatibility=map(x->in(x.well.container,compatible_destination_containers),destinations)
             for d in eachindex(destinations)
@@ -259,7 +259,7 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robot::Robot
             end 
         end 
 
-        if !any(map(x->typeof(x.compatible_containers)==Missing,robot.properties.positions))
+        if !any(map(x->typeof(x.compatible_containers)==Missing,filter(x->x.is_source==true,robot.properties.positions)))
             compatible_source_containers=unique(vcat(map(x->x.compatible_containers,filter(x->x.is_source==true,robot.properties.positions))...))
             available_sources= filter(x->in(x.well.container,compatible_source_containers),available_sources) 
         end 
