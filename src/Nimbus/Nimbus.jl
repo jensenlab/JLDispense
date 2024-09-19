@@ -57,6 +57,62 @@ NimbusProperties(false,50u"µL",1u"mL",1000u"µL",default_nimbus_config,[JLIMS.L
 NimbusConfiguration(25,"default")
 )
 
+function rack_codes(n) 
+    codes=["" for _ in 1:n]
+    alphabet=collect('A':'Z')
+    k=length(alphabet)
+    i=1
+    alphacounter=0
+    for i = 1:n
+        codes[i]=repeat(alphabet[mod(i-1,k)+1],cld(i,k))
+    end 
+    return codes 
+end 
+
+
+function circle(x,y,r)
+
+    θ=LinRange(0,2*π,500)
+    x .+ r*sin.(θ), y .+ r*cos.(θ)
+end 
+
+function visualize_rack(name::AbstractString,setup::Vector{AbstractString})
+    n=length(setup)
+    size=(1,1)
+    fontsize=14
+    wrapwidth=20
+    if n == 6 
+        size=(2,3)
+        wrapwidth=30
+
+    elseif n==24 
+        size=(4,6)
+        fontsize=10
+        wrapwidth=20
+    else
+        ArgumentError("Only 50mL and 15mL racks are supported")
+    end 
+    r,c=size
+    vals=reshape(setup,r,c)
+    plt=plot(grid=false,size=(1200,800),yflip=true,legend=false,dpi=300,xticks=1:c,yticks=(1:r,rack_codes(r)),xmirror=true,tickdirection=:none,tickfontsize=18)
+
+    for x in 1:c
+        for y in 1:r 
+            annotate!(x,y,text(TextWrap.wrap(vals[y,x],width=wrapwidth),:center,fontsize))
+            plot!(circle(x,y,0.5),color="black")
+        end 
+    end 
+
+
+    plot!(ylims=(0.5,r+0.5),xlims=(0.5,c+0.5))
+    plot!(title=name,titlefontsize=20)
+    return plt 
+
+
+
+
+end 
+
 function convert_nimbus_design(design::DataFrame,sources::Vector{T},destinations::Vector{U},source_deck::DeckPosition,destination_deck::DeckPosition,robot::Nimbus) where {T <: JLIMS.Stock,U <:JLIMS.Stock}
 
 
@@ -140,13 +196,19 @@ function nimbus(directory::AbstractString, protocol_name::AbstractString, design
     sl_set=[(cum_s_slots[i]+ 1):min(cum_s_slots[i+1],S) for i in 1:s_runs]
     dl_set=[(cum_d_slots[i] + 1):min(cum_d_slots[i+1],D) for i in 1:d_runs]
 
+    source_loading=DataFrame("Rack"=>AbstractString[],"Position"=>Integer[],"LabwareID"=>AbstractString[])
+    destination_loading=DataFrame("Rack"=>AbstractString[],"Position"=>Integer[],"LabwareID"=>AbstractString[])
+
     dispenses=DataFrame("Source Labware ID"=>AbstractString[],"Source Position ID"=>Integer[],"Volume (uL)"=>Real[],"Destination Labware ID"=>AbstractString[],"Destination Position ID"=>AbstractString[])
     for d in 1:d_runs
         for s in 1:s_runs 
             ss=vcat(s_idxs[sl_set[s]]...)
             dd=vcat(d_idxs[dl_set[d]]...)
-            df=convert_nimbus_design(design[ss,dd],sources,destinations,source_decks[s],destination_decks[d],robot)
-
+            df=convert_nimbus_design(design[ss,dd],sources[ss],destinations[dd],source_decks[s],destination_decks[d],robot)
+            src_load=DataFrame("Rack"=>[source_decks[s].name for _ in 1:s_slots[s]],"Position"=> collect(1:s_slots[s]),"LabwareID"=>vcat(map(x->x.well.labwareid,sources[ss]),["" for _ in 1:(s_slots[s]-length(sources[ss]))]))
+            dest_load=DataFrame("Rack"=>[destination_decks[d].name for _ in 1:d_slots[d]], "Position"=>collect(1:d_slots[d]),"LabwareID"=>vcat(unique(map(x->x.well.labwareid,destinations[dd])),["" for _ in 1:(d_slots[d]-length(unique(map(x->x.well.labwareid,destinations[dd]))))]))
+            append!(source_loading,src_load)
+            append!(destination_loading,dest_load)
             n=nrow(df)
             dispense_df=DataFrame([[],[],[],[],[],],names(df))
             for i = 1:n 
@@ -183,6 +245,20 @@ function nimbus(directory::AbstractString, protocol_name::AbstractString, design
     if ~isdir(full_dir)
         mkdir(full_dir)
     end 
+
+    source_loading=unique(source_loading)
+    destination_loading=unique(destination_loading)
+
+    src_racks=unique(source_loading[:,"Rack"])
+    for rack in src_racks 
+        entries=subset(source_loading, :Rack => x->x.==rack)
+        sort!(entries,[:Position])
+        plt=visualize_rack(rack,entries[:,:LabwareID])
+        png(plt,joinpath(full_dir,rack*".png"))
+    end 
+    CSV.write(joinpath(full_dir,"destination_loading.csv"),destination_loading)
+
+
     
     CSV.write(joinpath(full_dir,protocol_name*".csv"),dispenses)
     write(joinpath(full_dir,"config.json"),JSON.json(robot))
@@ -197,7 +273,6 @@ function mixer(directory::AbstractString,sources::Vector{T},destinations::Vector
     srcs_needed=filter(x->ustrip(sum(design[x,:])) > 0,eachindex(sources))
 
     srcs=sources[srcs_needed]
-
     des=design[srcs_needed,:]
 
     s_slots=sum(map(x->x.slots,filter(x->x.is_source,robot.properties.positions)))
@@ -235,7 +310,7 @@ sources=JLD2.load("./src/Mixer/dwp_stocks.jld2")["stocks"]
 destinations=JLD2.load("./src/Mixer/stock_targets.jld2")["out"]
 alts=JLD2.load("./src/Mixer/example_stocks.jld2")["stocks"]
 all_actives=JLD2.load("./src/Mixer/all_actives.jld2")["all_actives"]
-t,m=dispense_solver(all_actives,sources,nimbus_default;return_model=true)
+#t,m=dispense_solver(all_actives,sources,nimbus_default;return_model=true)
 protocol_name,transfer_table=mixer("/Users/BDavid/Desktop/",all_actives,sources,nimbus_default)
 
 =#

@@ -26,7 +26,7 @@ end
 
 
 
-human_default=Human("",
+human_default=Human("Default Human",
 HumanProperties(false,0.1u"µL",100u"L",0.1u"mg",100u"kg",[JLIMS.SolidStock,JLIMS.LiquidStock,JLIMS.EmptyStock]),
 HumanConfiguration("n/a")
 )

@@ -19,6 +19,7 @@ mutable struct CobraConfiguration <: RobotConfiguration
   washtime::Int # time in ms 
   ASPVol::Vector{Real}
   ASPPad::Real
+  ASPDistance::Real
   path::Vector{AbstractString}
   liquidclasses::Vector{AbstractString}
   pause::Bool
@@ -63,7 +64,7 @@ const default_cobra_deck_2=DeckPosition("Deck 2",false,1,[
 
 cobra_default = Cobra("Default Cobra",
 CobraProperties(false,0.3u"µL",40u"µL",750u"µL",[default_cobra_deck_1,default_cobra_deck_2],[JLIMS.LiquidStock]),
-CobraConfiguration("N/A","N/A","A",1,5000,[0,0,0,0],1.1,["","","",""],["Water"],true,0,"C:\\Users\\Dell\\Dropbox (University of Michigan)\\JensenLab\\Cobra\\")
+CobraConfiguration("N/A","N/A","A",1,5000,[0,0,0,0],1.1,1,["","","",""],["Water"],true,0,"C:\\Users\\Dell\\Dropbox (University of Michigan)\\JensenLab\\Cobra\\")
 )
 
 #############################################
@@ -82,6 +83,7 @@ function fill_protocol_template(settings::CobraConfiguration)
   LiquidClass=settings.liquidclasses
   DispensePause=settings.pause
   PredispenseCount=settings.predispenses
+  distance=settings.ASPDistance
 
 
   template="""
@@ -115,7 +117,7 @@ function fill_protocol_template(settings::CobraConfiguration)
     </PlateSelection>
   </DeckLocations>
   <RepeatCount>1</RepeatCount>
-  <ASPDistanceToBottom>2</ASPDistanceToBottom>
+  <ASPDistanceToBottom>$(distance)</ASPDistanceToBottom>
   <AspirateChannel1StartWell>
     <Row>$(ASPRow)</Row>
     <Column>$(ASPCol)</Column>

@@ -9,7 +9,10 @@ using
     Random,
     Unitful,
     UnitfulParsableString,
-    JSON
+    JSON,
+    UUIDs,
+    Plots,
+    TextWrap
 include("./RandomProtocolNames/random_protocol_name.jl")
 include("./Robot/Robot.jl")
 include("./DispenseSolver/dispense_solver.jl")
@@ -18,6 +21,7 @@ include("./Mantis/Mantis.jl")
 include("./Tempest/Tempest.jl")
 include("./Nimbus/Nimbus.jl")
 include("./Human/Human.jl")
+include("./NimbusCobra/NimbusCobra.jl")
 
 
 
