@@ -543,7 +543,7 @@ Create Cobra dipsense instructions for microplate source to destination operatio
   * `predispensecount=0`: Number of pre-dispense shots Cobra performs before dispensing 
   *  `cobra_location="C:\\Users\\Dell\\Dropbox (University of Michigan)\\JensenLab\\Cobra\\"`: The location of the cobra's working directory on the driving machine.
 """
-function cobra(directory::AbstractString,protocol_name::AbstractString,design::DataFrame,sources::Vector{T},destinations::Vector{U},robot::Cobra;liquidclass="Water") where  {T <: JLIMS.Stock,U <:JLIMS.Stock}
+function cobra(directory::AbstractString,protocol_name::AbstractString,design::DataFrame,sources::Vector{T},destinations::Vector{U},robot::Cobra;liquidclass="Water",kwargs...) where  {T <: JLIMS.Stock,U <:JLIMS.Stock}
     allequal(map(x->x.well.labwareid,sources)) ? nothing : error("All source stocks must be on the same labware")
     allequal(map(x->x.well.labwareid,destinations)) ? nothing : error("All destination stocks must be on the same labware")
     source=sources[1].well.container

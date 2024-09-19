@@ -58,6 +58,7 @@ destinations=JLD2.load("./src/Mixer/stock_targets.jld2")["out"]
 alts=JLD2.load("./src/Mixer/example_stocks.jld2")["stocks"]
 all_actives=JLD2.load("./src/Mixer/all_actives.jld2")["all_actives"]
 intermediates=JLD2.load("./src/Mixer/intermediates.jdl2")["intermediates"]
-intermediates=mixer("/Users/BDavid/Desktop/",all_actives,destinations,nimbus_default,cobra_default)
+intermediates=mixer("/Users/BDavid/Desktop/",all_actives,destinations,nimbus_default,cobra_default;obj_cutoff=0.01)
+
 
 =#

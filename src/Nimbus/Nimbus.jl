@@ -312,6 +312,5 @@ alts=JLD2.load("./src/Mixer/example_stocks.jld2")["stocks"]
 all_actives=JLD2.load("./src/Mixer/all_actives.jld2")["all_actives"]
 #t,m=dispense_solver(all_actives,sources,nimbus_default;return_model=true)
 protocol_name,transfer_table=mixer("/Users/BDavid/Desktop/",all_actives,sources,nimbus_default)
-
 =#
 
