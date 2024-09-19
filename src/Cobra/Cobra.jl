@@ -611,7 +611,7 @@ function mixer(directory::AbstractString,sources::Vector{T},destinations::Vector
         dispenses=des[src_idxs[i],dest_idxs[j]]
         if sum(Matrix(dispenses)) > 0u"µL"
             protocol_name=random_protocol_name()
-            transfer_table=cobra(directory,protocol_name,dispenses,srcs,destinations,robot;kwargs...)
+            transfer_table=cobra(directory,protocol_name,dispenses,srcs[src_idxs[i]],destinations[dest_idxs[j]],robot;kwargs...)
             push!(pn,protocol_name)
             push!(tt,transfer_table)
         end 
