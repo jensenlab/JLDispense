@@ -266,7 +266,7 @@ function nimbus(directory::AbstractString, protocol_name::AbstractString, design
 end 
 
 
-function mixer(directory::AbstractString,sources::Vector{T},destinations::Vector{U},robot::Nimbus,kwargs...) where {T <: JLIMS.Stock,U <:JLIMS.Stock}
+function mixer(directory::AbstractString,sources::Vector{T},destinations::Vector{U},robot::Nimbus;kwargs...) where {T <: JLIMS.Stock,U <:JLIMS.Stock}
     design=dispense_solver(sources,destinations,robot,minimize_overdrafts!,minimize_sources!,minimize_transfers!;pad=1.25,kwargs...)
 
 
@@ -295,7 +295,7 @@ function mixer(directory::AbstractString,sources::Vector{T},destinations::Vector
     for i in 1:outer_runs 
         for j in 1:inner_runs 
             protocol_name=random_protocol_name()
-            push!(tt,nimbus(directory,protocol_name,des[s_idxs[i],d_idxs[j]],srcs[s_idxs[i]],destinations[d_idxs[j]],robot))
+            push!(tt,nimbus(directory,protocol_name,des[s_idxs[i],d_idxs[j]],srcs[s_idxs[i]],destinations[d_idxs[j]],robot;kwargs...))
             push!(pn,protocol_name)
         end 
     end 
