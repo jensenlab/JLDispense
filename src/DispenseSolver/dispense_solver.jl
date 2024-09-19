@@ -430,8 +430,10 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robot::Robot
             end 
         end 
         set_objective_sense(model, MOI.FEASIBILITY_SENSE)
-        set_attribute(model,"Cutoff",obj_cutoff* sum(weights'.*dq.^2)) # reject any solutions that are larger than the objective tolerance, which is a percentage of the sum squared target quantities.
-        set_attribute(model, "BestObjStop",obj_tolerance*sum(weights'.*dq.^2)) 
+        if level==UInt(0)
+            set_attribute(model,"Cutoff",obj_cutoff* sum(weights'.*dq.^2)) # reject any solutions that are larger than the objective tolerance, which is a percentage of the sum squared target quantities.
+            set_attribute(model, "BestObjStop",obj_tolerance*sum(weights'.*dq.^2)) 
+        end 
         @objective(model, Min,sum(weights'.*(slacks.^2))) # penalize large slacks, search for q that minimize slacks.
         optimize!(model)
 
