@@ -64,7 +64,7 @@ const default_cobra_deck_2=DeckPosition("Deck 2",false,1,[
 
 cobra_default = Cobra("Default Cobra",
 CobraProperties(false,0.3u"µL",40u"µL",750u"µL",[default_cobra_deck_1,default_cobra_deck_2],[JLIMS.LiquidStock]),
-CobraConfiguration("N/A","N/A","A",1,5000,[0,0,0,0],1.1,1,["","","",""],["Water"],true,0,"C:\\Users\\Dell\\Dropbox (University of Michigan)\\JensenLab\\Cobra\\")
+CobraConfiguration("N/A","N/A","A",1,5000,[0,0,0,0],1.1,1.5,["","","",""],["Water"],true,0,"C:\\Users\\Dell\\Dropbox (University of Michigan)\\JensenLab\\Cobra\\")
 )
 
 #############################################
@@ -483,7 +483,7 @@ function design2protocols(directory::AbstractString,design::DataFrame,source::JL
           filename=joinpath(directory,"DispenseFile$(filecounter).csv")
           push!(fileidxs,filecounter)
           filecounter+=1
-          CSV.write(filename,x)   
+          CSV.write(filename,x;writeheader=false)   
         end 
         d=d.-to_dispense
 
