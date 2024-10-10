@@ -593,7 +593,7 @@ end
 
 
 function mixer(directory::AbstractString,sources::Vector{T},destinations::Vector{U},robot::Cobra;kwargs...) where  {T <: JLIMS.Stock,U <:JLIMS.Stock}
-  design=dispense_solver(sources,destinations,robot;kwargs...)
+  design=dispense_solver(sources,destinations,robot,minimize_overdrafts!;kwargs...)
 
   srcs_needed=filter(x->ustrip(sum(design[x,:])) > 0,eachindex(sources))
 
