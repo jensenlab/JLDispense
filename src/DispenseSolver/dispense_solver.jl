@@ -425,15 +425,14 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robot::Robot
 
         weights= falses(I)
         for i in 1:I
-            if priority[all_ingredients[i]] == level 
+            if priority[all_ingredients[i]] <= level 
                 weights[i]=true # activate the weight term for this ingredient on this pass
             end 
         end 
         set_objective_sense(model, MOI.FEASIBILITY_SENSE)
-        if level==UInt(0)
-            set_attribute(model,"Cutoff",obj_cutoff* sum(weights'.*dq.^2)) # reject any solutions that are larger than the objective tolerance, which is a percentage of the sum squared target quantities.
-            set_attribute(model, "BestObjStop",obj_tolerance*sum(weights'.*dq.^2)) 
-        end 
+        target_bound=sum(weights'.*dq.^2)
+        set_attribute(model,"Cutoff",obj_cutoff* target_bound) # reject any solutions that are larger than the objective tolerance, which is a percentage of the sum squared target quantities.
+        set_attribute(model, "BestObjStop",obj_tolerance*target_bound) 
         @objective(model, Min,sum(weights'.*(slacks.^2))) # penalize large slacks, search for q that minimize slacks.
         optimize!(model)
 
