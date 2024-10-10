@@ -134,7 +134,7 @@ function multi_tempest(directory::AbstractString,protocol_name::AbstractString,d
 
     d_idxs=[findall(x->x.well.labwareid==i,destinations) for i in d_labware]
 
-    dlnames=[protocol_name*"_$i" for _ in eachindex(d_idxs)]
+    dlnames=[protocol_name*"_$i" for i in eachindex(d_idxs)]
 
     full_dir=joinpath(directory,protocol_name)
     if ~isdir(full_dir)
