@@ -8,7 +8,7 @@ end
 
 
 
-function mixer(directory::AbstractString,sources::Vector{T},destinations::Vector{U},robot_nimbus::Nimbus,robot_cobra::Cobra;lw_gen=generate_temporary_labware,kwargs...) where {T <: JLIMS.Stock,U <:JLIMS.Stock}
+function mixer(directory::AbstractString,sources::Vector{T},destinations::Vector{U},robot_nimbus::Nimbus,robot_cobra::Cobra;intermediate_pad=1.5,lw_gen=generate_temporary_labware,kwargs...) where {T <: JLIMS.Stock,U <:JLIMS.Stock}
 
     compatible_containers=unique(vcat(map(x->x.compatible_containers,filter(x->x.is_source,robot_nimbus.properties.positions))...))
 
@@ -17,9 +17,8 @@ function mixer(directory::AbstractString,sources::Vector{T},destinations::Vector
     full_design=dispense_solver(srcs,destinations,human_default,minimize_overdrafts!,minimize_sources!,minimize_transfers!;pad=1.25,kwargs...)
     source_quantities=sum.(eachrow(full_design))
 
-    pad_factor=1.3
 
-    source_quantities=source_quantities*pad_factor
+    source_quantities=source_quantities*intermediate_pad
     deadvol=300u"µL"
     cap=dwp96_2ml.capacity-deadvol
 
