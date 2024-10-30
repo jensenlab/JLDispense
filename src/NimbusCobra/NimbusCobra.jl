@@ -14,7 +14,7 @@ function mixer(directory::AbstractString,sources::Vector{T},destinations::Vector
 
     srcs=filter(x->in(x.well.container,compatible_containers),sources)
 
-    full_design=dispense_solver(srcs,destinations,human_default,minimize_overdrafts!,minimize_sources!,minimize_transfers!;pad=1.25,kwargs...)
+    full_design=dispense_solver(srcs,destinations,human_default,minimize_overdrafts!,minimize_overshots!,minimize_sources!,minimize_transfers!;pad=1.25,kwargs...)
     source_quantities=sum.(eachrow(full_design))
 
 
