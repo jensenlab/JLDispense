@@ -43,16 +43,20 @@ Base.showerror(io,::IO, e::StockCompatibilityError)= print(io,e.msg)
 
 
 
-function preferred_ingredient_quantity(ing::JLIMS.Ingredient)
-    pref_ing_quant=Dict(:solid=>u"mg",:liquid=>u"µL",:organism=>u"OD*µL")
-    return pref_ing_quant[ing.class]
+function preferred_quantity(ing::JLIMS.Chemical)
+    pref_ing_quant=Dict(JLIMS.Solid=>u"mg",JLIMS.Liquid=>u"µL")
+    return pref_ing_quant[typeof(ing)]
 end 
 
-function preferred_stock_quantity(stock::JLIMS.Stock)
+function preferred_quantity(stock::JLIMS.Stock)
     pref_stock_quant=Dict(JLIMS.SolidStock=> u"mg",JLIMS.LiquidStock => u"µL")
     return pref_stock_quant[typeof(stock)]
 end 
 
+function preferred_quantity(culture::JLIMS.Culture)
+    pref_culture_quant=Dict(JLIMS.SolidStock=> u"mg",JLIMS.LiquidStock => u"µL")
+    return pref_culture_quant[typeof(culture.media)]
+end
 
 
 """ 
@@ -62,11 +66,19 @@ Return the concentration of an ingredient in a stock using the preferred units f
     
 
 """
-function concentration(stock::JLIMS.Stock,ingredient::JLIMS.Ingredient) 
+function concentration(stock::JLIMS.Stock,ingredient::JLIMS.Chemical) 
     if ingredient in ingredients(stock.composition) 
-        return uconvert(preferred_ingredient_quantity(ingredient)/preferred_stock_quantity(stock),stock.composition.ingredients[ingredient])
+        return uconvert(preferred_quantity(ingredient)/preferred_quantity(stock),stock.composition.ingredients[ingredient])
     else
-        return 0*preferred_ingredient_quantity(ingredient)/preferred_stock_quantity(stock)
+        return 0*preferred_quantity(ingredient)/preferred_quantity(stock)
+    end 
+end 
+
+function concentration(culture::JLIMS.Culture,ingredient::JLIMS.Chemical)
+    if ingredient in ingredients(culture.media.composition)
+        return uconvert(preferred_quantity(ingredient)/preferrred_quantity(culture),culture.media.composition.ingredients[ingredient])
+    else 
+        return 0 * preferred_quantity(ingredient)/preferred_quantity(culture)
     end 
 end 
 
@@ -77,7 +89,7 @@ Return the quantity of an ingredient in a stock using the preferred units for th
     
 
 """
-function quantity(stock::JLIMS.Stock,ingredient::JLIMS.Ingredient)
+function quantity(stock::JLIMS.Stock,ingredient::JLIMS.Chemical)
     if ingredient in ingredients(stock.composition)
         return uconvert(preferred_ingredient_quantity(ingredient),stock.composition.ingredients[ingredient]*stock.quantity)
     else
@@ -85,7 +97,15 @@ function quantity(stock::JLIMS.Stock,ingredient::JLIMS.Ingredient)
     end 
 end 
 
-function stock_ingredient_array(stocks::Vector{T},ingredients::Vector{JLIMS.Ingredient};measure=concentration) where T<: JLIMS.Stock # can return concentration or quantity 
+function quantity(culture::JLIMS.Culture,ingredient::JLIMS.Chemical)
+    if ingredient in ingredients(culture.media.composition)
+        return uconvert(preferred_quantity(ingredient),JLIMS.composition(culture).ingredients[ingredient]*JLIMS.quantity(culture))
+    else
+        return 0*preferred_quantity(ingredient)
+    end 
+end 
+
+function ingredient_array(stocks::Vector{T},ingredients::Vector{JLIMS.Ingredient};measure=concentration) where T<: Union{JLIMS.Stock,JLIMS.Culture} # can return concentration or quantity 
     S=length(stocks)
     out=DataFrame()
         for i in ingredients 
@@ -100,11 +120,20 @@ function stock_ingredient_array(stocks::Vector{T},ingredients::Vector{JLIMS.Ingr
 end 
 
             
-function stock_ingredient_array(stock::JLIMS.Stock,ingredients::Vector{JLIMS.Ingredient})
-    return stock_ingredient_array([stock],ingredients)
+function ingredient_array(stock::Union{JLIMS.Stock,JLIMS.Culture},ingredients::Vector{JLIMS.Ingredient})
+    return ingredient_array([stock],ingredients)
 end 
 
-function make_transfer_table(sources::Vector{T},destinations::Vector{U},design::DataFrame) where {T <: JLIMS.Stock,U <:JLIMS.Stock}
+
+function strain_array(cultures::Vector{JLIMS.Culture},strains::Vector{JLIMS.Strain})
+    pairs=Iterators.product(strains,cultures) |> collect 
+    out = in.(pairs)
+    return out' # output expected bo be cultures by strains instead of strains by cultures
+end  
+
+
+
+function transfer_table(sources::Vector{T},destinations::Vector{U},design::DataFrame) where {T <: Union{JLIMS.Culture,JLIMS.Stock},U <:Union{JLIMS.Culture,JLIMS.Stock}}
     transfer_table=DataFrame(Source=Integer[],Destination=Integer[],Quantity=Real[],Unit=AbstractString[])
     r=nrow(design)
     c=ncol(design)
@@ -115,8 +144,8 @@ function make_transfer_table(sources::Vector{T},destinations::Vector{U},design::
             if quantity==0 
                 continue 
             else 
-                source=sources[row].well.id 
-                destination=destinations[col].well.id
+                source=JLIMS.well(sources[row]).id 
+                destination=JLIMS.well(destinations[col]).id
                 un=string(unit(val))
                 push!(transfer_table,(source,destination,quantity,un))
             end 
@@ -132,21 +161,21 @@ function minimize_transfers!(model) # only use in the context of dispense solver
     @objective(model, Min,sum(qi))
     optimize!(model)
     ti=JuMP.value.(qi) 
-    @constraint(model,sum(qi)==sum(ti))
+    @constraint(model,sum(qi)<=sum(ti))
 end 
 
 function minimize_sources!(model) # only use in the context of dispense_solver, this function relies on model variables defined in dispense solver
-    S,D=size(model[:q])
+    S,D,R=size(model[:q])
     q=model[:q]
     @variable(model,source_indicator[1:S],Bin) # Define an indicator for whether a source s is active
     for s in 1:S
-        @constraint(model, !source_indicator[s]=>{sum(q[s,:]) == 0}) # turn the indicator on if there is a nonzero transfer from source s to any destination
+        @constraint(model, !source_indicator[s]=>{sum(q[s,:,:]) == 0}) # turn the indicator on if there is a nonzero transfer from source s to any destination
     end 
     set_objective_sense(model, MOI.FEASIBILITY_SENSE)
     @objective(model, Min,sum(source_indicator))
     optimize!(model)
     si=JuMP.value.(source_indicator)
-    @constraint(model,sum(source_indicator)==sum(si))
+    @constraint(model,sum(source_indicator)<=sum(si))
 end 
 
 function minimize_labware!(model)
@@ -170,7 +199,7 @@ function minimize_overdrafts!(model)
     caps=model[:caps]
     @variable(model, overdraft_indicator[1:S],Bin)
     for s in 1:S 
-        @constraint(model, !overdraft_indicator[s]=>{sum(q[s,:])<=caps[s]})
+        @constraint(model, !overdraft_indicator[s]=>{sum(q[s,:,:])<=caps[s]})
     end 
     set_objective_sense(model, MOI.FEASIBILITY_SENSE)
     @objective(model, Min,sum(overdraft_indicator))
@@ -180,13 +209,26 @@ function minimize_overdrafts!(model)
 end 
 
 
-
+function minimzie_robots(model) 
+    q=model[:q]
+    S,D,R=size(q)
+    @variable(model, robot_indicator[1:R],Bin)
+    for r in 1:R 
+        @constraint(model,!robot_indicator[r]=> {sum(q[:,:,r] == 0)})
+    end 
+    set_objective_sense(model, MOI.FEASIBILITY_SENSE)
+    @objective(model, Min,sum(robot_indicator))
+    optimize!(model)
+    ri=JuMP.value.(robot_indicator)
+    @constraint(model,sum(robot_indicator)==sum(ri))
+end 
+    
 
 function enforce_maxShots!(model)
     S,D=size(model[:q])
     q=model[:q]
     for s in 1:S
-        @constraint(model,q[s,:] .<= model[:maxShots][s])
+        @constraint(model,q[s,:,:] .<= model[:maxShots][s,:])
     end 
     optimize!(model) 
 end
@@ -195,10 +237,12 @@ function minimize_overshots!(model)
     S,D=size(model[:q])
     q=model[:q]
     maxShots=model[:maxShots]
-    @variable(model,overshot_indicator[1:S,1:D],Bin)
+    @variable(model,overshot_indicator[1:S,1:D,1:R],Bin)
     for s in 1:S
         for d in 1:D
-            @constraint(model,!overshot_indicator[s,d] => {q[s,d]<=maxShots[s]})
+            for r in 1:R
+                @constraint(model,!overshot_indicator[s,d,r] => {q[s,d,r]<=maxShots[s,r]})
+            end
         end 
     end 
     set_objective_sense(model, MOI.FEASIBILITY_SENSE)
@@ -230,87 +274,82 @@ end
 
 
 
-function dispense_solver(sources::Vector{T},destinations::Vector{U},robot::Robot,secondary_objectives...;quiet::Bool=true,timelimit::Real=10,pad::Real=1.25,slack_tolerance::Real=0,overdraft_tolerance::Real=1e-8,require_nonzero::Bool=true,return_model::Bool=false,obj_tolerance=1e-6,obj_cutoff=1e-3,priority::Dict{JLIMS.Ingredient,UInt64}=Dict{JLIMS.Ingredient,UInt64}(),kwargs...) where {T<: JLIMS.Stock,U<:JLIMS.Stock}
-   
+function dispense_solver(sources::Vector{T},destinations::Vector{U},robots::Vector{V},source_compatibility::BitMatrix,secondary_objectives...;quiet::Bool=true,timelimit::Real=10,pad::Real=1.25,slack_tolerance::Real=0,overdraft_tolerance::Real=1e-8,require_nonzero::Bool=true,return_model::Bool=false,obj_tolerance=1e-6,obj_cutoff=1e-3,inoculation_quantity::Real=2, priority::Dict{JLIMS.Chemical,UInt64}=Dict{JLIMS.Chemical,UInt64}(),kwargs...) where {T<: JLIMS.Culture,U<:JLIMS.Culture,V<:Robot}
+    # check the length of the inputs 
+    S= length(sources) 
+    D= length(destinations) 
+    R= length(robots)
     
+    # check that the source compatibility matrix is valid  
+    a,b=size(source_compatibility)
+    (a,b) == (S,R) ? nothing : error("compatibility matrix size ($a x $b) does not agree with the stocks and robots ($(S) x $(R))")
+    src_pairs= Iterators.product(sources,robots) |> collect # iterate all pairs of sources and robots 
+    all( source_compatibility .<= is_compatible.(src_pairs;source=true)) ? nothing : throw(StockCompatibilityError("at least one source -- robot pair is incompatible"))
+
+
+    # calculate destination compatibility 
+    dest_pairs= Iterators.product(destinations,robots) |> collect
+    destination_compatibility = is_compatibile.(dest_pairs;source=false) 
     
-    # check inputs for issues 
+    # check keyword parameters  for issues 
     pad >= 1 ? nothing : error("padding factor must be greater than or equal to 1")
     0 <= overdraft_tolerance ? nothing : error("overdraft tolerance must be nonnegative")
     0 <= slack_tolerance ? nothing : error("Slack tolerance must be nonnegative")
-    # check sources and destination for compatibility issues. If sources have an issue, ignore them. If the destinations have an issue, throw an error. 
-    available_sources= filter(x->in(typeof(x),robot.properties.compatible_stocks),sources)
-    if hasproperty(robot.properties,:positions) 
-        
-        stock_compatibility=map(x->in(typeof(x),robot.properties.compatible_stocks),destinations)
-       
-        for d in eachindex(destinations) 
-            if !stock_compatibility[d]
-                throw(StockCompatibilityError("the robot $(robot.name) is not compatible with a $(typeof(destinations[d]))."))
-            end 
-        end 
-        if !any(map(x->typeof(x.compatible_containers)==Missing,filter(x->x.is_source==false,robot.properties.positions)))
-            compatible_destination_containers=unique(vcat(map(x->x.compatible_containers,filter(x->x.is_source==false && typeof(x.compatible_containers) != Missing,robot.properties.positions))...))
-            container_compatibility=map(x->in(x.well.container,compatible_destination_containers),destinations)
-            for d in eachindex(destinations)
-                if !container_compatibility[d]
-                    throw(ContainerError("the robot $(robot.name) is not compatible with the container $(destinations[d].well.container.name) as a destination"))
-                end 
-            end 
-        end 
 
-        if !any(map(x->typeof(x.compatible_containers)==Missing,filter(x->x.is_source==true,robot.properties.positions)))
-            compatible_source_containers=unique(vcat(map(x->x.compatible_containers,filter(x->x.is_source==true,robot.properties.positions))...))
-            available_sources= filter(x->in(x.well.container,compatible_source_containers),available_sources) 
+    # create an S x R matrix of the minimum and maximum shot values for each stock -- robot pair 
+    minshots = zeros(S,R)
+    maxshots = Inf * ones(S,R)
+    for s in 1:S
+        for r in 1:R 
+            stock= sources[s].media  
+            minshots[s,r] = ustrip(uconvert(u"µL",hasproperty(robot.properties,:minVol) ? robot.properties.minVol : 0u"µL"))
+            maxshots[s,r]=ustrip(uconvert(u"µL",hasproperty(robot.properties,:maxVol) ? robot.properties.maxVol : Inf*u"µL"))
+            if stock isa JLIMS.SolidStock
+                minshots[s,r]=ustrip(uconvert(u"mg",hasproperty(robot.properties,:minMass) ? robot.properties.minMass : 0u"g"))
+                maxshots[s,r]=ustrip(uconvert(u"mg",hasproperty(robot.properties,:maxMass) ? robot.properties.maxMass : Inf*u"g"))
+            end 
         end 
-    end
-    if length(available_sources)==0
-        throw(error("No compatible sources exist for $(robot.name)"))
     end 
+            
 
-    minVol= ustrip(uconvert(u"µL",hasproperty(robot.properties,:minVol) ? robot.properties.minVol : 0u"µL"))
-    maxVol=ustrip(uconvert(u"µL",hasproperty(robot.properties,:maxVol) ? robot.properties.maxVol : Inf*u"µL"))
-    minMass=ustrip(uconvert(u"mg",hasproperty(robot.properties,:minMass) ? robot.properties.minMass : 0u"g"))
-    maxMass=ustrip(uconvert(u"mg",hasproperty(robot.properties,:maxMass) ? robot.properties.maxMass : Inf*u"g"))
-    maxShotDict=Dict(JLIMS.SolidStock => maxMass, JLIMS.LiquidStock => maxVol)
-    minShotDict=Dict(JLIMS.SolidStock => minMass, JLIMS.LiquidStock => minVol)
-    minshotvals=map(x->minShotDict[typeof(x)],available_sources)
-    maxshotvals=map(x->maxShotDict[typeof(x)],available_sources)
-    
+
     # Gather all ingredients contained in the sources, destinations, and priority list 
-    source_ingredients= unique(vcat(map(x->ingredients(x.composition),available_sources)...))
-    destination_ingredients= unique(vcat(map(x->ingredients(x.composition),destinations)...))
+    source_ingredients= unique(vcat(map(x->ingredients(JLIMS.composition(x)),sources)...))
+    destination_ingredients= unique(vcat(map(x->ingredients(JLIMS.composition(x)),destinations)...))
     all_ingredients = unique(vcat(source_ingredients,destination_ingredients,collect(keys(priority))))
-    # group all available_sources by labware 
+    I= length(all_ingredients)
+
+    # gather all strains contained in the sources and destinations 
+    source_strains = unique(filter(y->!ismissing(y),vcat(map(x->x.strains,sources)...)))
+    destination_strains = unique(filter(y->!ismissing(y),vcat(map(x->x.strains,destinations)...)))
+    all_strains= union(source_strains,destination_strains)
+    Y=length(all_strains)
+    src_strain_array=strain_array(sources,strains)
+    dest_strain_array=strain_array(destinations,strains)
+
+    # group all available_sources by location 
     src_labware=unique(map(x->x.well.labwareid,available_sources))
     SL=length(src_labware)
     slw_idxs=[findall(x->x.well.labwareid==src_labware[l],available_sources) for l in 1:SL ]
 
 
-    # group all destinations by labware 
+    # group all destinations by location 
     dest_labware=unique(map(x->x.well.labwareid,destinations))
     DL=length(dest_labware)
     dlw_idxs=[findall(x->x.well.labwareid==dest_labware[l],destinations) for l in 1:DL ]
 
     # get and convert the source stock quantities for overdraft constants 
-    source_quantities = ustrip.(map(x->uconvert(preferred_stock_quantity(x),x.quantity),available_sources))
+    source_quantities = ustrip.(map(x->uconvert(preferred_quantity(x),JLIMS.quantity(x)),sources))
 
     # Create the concentration array for the sources and the target quantity array for the destinations
-    source_concentrations=stock_ingredient_array(available_sources,all_ingredients) 
+    source_concentrations=ingredient_array(sources,all_ingredients) 
     sc = Float64.(Matrix(Unitful.ustrip.(source_concentrations)))
 
-
-
-
-
     #create the target array for the destinations 
-    destination_quantities=stock_ingredient_array(destinations,all_ingredients;measure=quantity)
+    destination_quantities=ingredient_array(destinations,all_ingredients;measure=quantity)
     dq = Float64.(Matrix(Unitful.ustrip.(destination_quantities)))
-    # grab the source quantities in the same units as the ingredient arrays 
 
-    S=length(available_sources)
-    D=length(destinations)
-    I=length(all_ingredients) 
+
     # check for missing source ingredients needed to complete the destination
     missing_ingredients=filter(x-> sum(Unitful.ustrip.(source_concentrations[:,Symbol(x.name)]))==0,destination_ingredients)
 
@@ -321,36 +360,36 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robot::Robot
 
     # Update priorities: priority increases with decreasing level
 
-    # Level 0: All level 0 ingredeients must hit their target concentration exactly, unless the robot is a discrete dispenser, then we allow for slack up to the objective cutoff. 
+    # Level 0: All level 0 ingredeients are blocked from the design. They may not appear in the stock. 
     # Level 1+: All other ingredients are scheduled sequentially by priority. we allow slack for all nonzero priorities, where we try to minimize the slack for each ingredient and then constrain the slack for future priority levels. 
     # Level 2^(64)-1: Maximum allowable priority level, typically a solvent like water that we would use to back fill will be assigned maximum priority level. 
 
     for ing in destination_ingredients
         if !in(ing,keys(priority))
-            val=UInt64(0) # any ingredient needed for any of the destination stocks is assigned 0 level priority unless the user has already explicitly defined a priority for that ingredient
-            if robot.properties.isdiscrete
-                val=UInt64(1) # we can't hit targets exactly with discrete instruments, so we give destination target ingredients a priority level 1 
-            end 
-            priority[ing]=val 
+            priority[ing]=UInt64(1)
         end 
     end 
     for ing in source_ingredients
-        if !in(ing,keys(priority)) # if the user hasn't specified a source ingredient priority or included it in the design (see above), assume it is priority 0. These ingredients will have a target concentration of 0 that must be hit exactly (they will be blocked, regardless of a discrete or continuous robot
+        if !in(ing,keys(priority)) # if the user hasn't specified a source ingredient priority or included it in the design (see above), assume it is priority 0. (These ingredients will be blocked, regardless of a discrete or continuous robot)
             priority[ing]=UInt64(0) 
         end 
     end 
 
-    capvals=source_quantities/pad
-    maxshot_param=[Inf for s in 1:S]
-    minshot_param=[0 for s in 1:S]
-    if robot.properties.isdiscrete
-        maxshot_param=maxshotvals ./ minshotvals # convert all masses and volumes to shots for the discrete problem 
-        minshot_param=minshotvals ./ minshotvals 
-        capvals = capvals ./ minshotvals 
-        sc = minshotvals .* sc
-    else 
-        maxshot_param = maxshotvals 
-        minshot_param= minshotvals
+    capvals=source_quantities/pad  # the maximum quantity of each source 
+
+
+    maxshot_param=Inf * ones(S,R)
+    minshot_param=zeros(S,R)
+    shot_density = ones(S,R) # assume that one shot delivers one unit of source 
+    for r in 1:R
+        if robots[r].properties.isdiscrete
+            maxshot_param[:,r]=maxshotvals[:,r] ./ minshotvals[:,r] # convert all masses and volumes to shots for the discrete problem 
+            minshot_param[:,r]=minshotvals[:,r] ./ minshotvals[:,r]
+            shot_density[:,r] = deepcopy(minshotvals[:,r]) # for discrete robots, one shot delivers the minimum shot value
+        else 
+            maxshot_param[:,r] = maxshotvals[:,r]
+            minshot_param[:,r]= minshotvals[:,r]
+        end 
     end 
 
 
@@ -363,50 +402,77 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robot::Robot
     set_attribute(model,"TimeLimit",timelimit)
 
     # Define constants 
-    @variable(model, minShots[1:S] in Parameter.(minshot_param))
-    @variable(model, maxShots[1:S] in Parameter.(maxshot_param))
+    @variable(model, minShots[1:S,1:R] in Parameter.(minshot_param))
+    @variable(model, maxShots[1:S,1:R] in Parameter.(maxshot_param))
     @variable(model, caps[1:S] in Parameter.(capvals)) # save a parameter for the volume of each available source
 
     # Define Model variables 
-    @variable(model, q[1:S,1:D]>=0) # q[s,d] = quantity of stock s transfered to stock d. q is the volume/mass for continous problems and shots for discrete problems 
-    @variable(model, qi[1:S,1:D],Bin) #  Indicator for whether a transfer in q is active
+    @variable(model, q[1:S,1:D,1:R]>=0) # q[s,d,r] = shots of source s transfered to destination d using robot r 
+    @variable(model, qi[1:S,1:D,1:R],Bin) #  Indicator for whether a transfer in q is active
+    @variable(model, stri[1:S,1:D],Bin) # strain transfer indicator 
     @variable(model,slacks[1:D,1:I]) # slack variables to measure the difference between the dispenses and the target quantities for each ingredient of each destination
-    @variable(model, lw[1:SL,1:DL]>=0) # continuous variable to measure the total volume dispensed from and to each labware 
+    @variable(model, lw[1:SL,1:DL]>=0) # continuous variable to measure the total quantity dispensed from and to each labware 
      
-
-    @constraint(model, q'*sc .- slacks .== dq ) # create the destinations with the sources, allowing for some slack
-
-
-    if robot.properties.isdiscrete 
-        println("discrete problem")
-        set_integer.(q) # q is an integer for discrete problems 
-        @constraint(model, q .>= qi) # enforce activity constraint
-    else 
-        println("semi-continuous problem")
-        for s in 1:S 
-            @constraint(model, q[s,:] .>= minshotvals[s]*qi[s,:]) # if a dispense is active it must be larger than the minimum shot volume for the robot. This formulates q as a semicontinuous variable from (minshotval, Inf)
+    for s in 1:S
+        for d in 1:D 
+            for r in 1:R
+                @constraint(model, !qi[s,d,r] => {q[s,d,r]== 0}) # tie the transfer indicator to the transfers
+            end 
         end 
+    end 
+
+    for s in 1:S 
+        for d in 1:D 
+            @constraint(model, !stri[s,d] => {sum(qi[s,d,:]==0)})
+        end 
+    end 
+
+
+    @constraint(model, sum([shot_density[:,r] .* q[:,:,r] for r in 1:R])'*sc .- slacks .== dq ) # create the destinations with the sources, allowing for some slack. This looks messy but it is a mass/volume balance. 
+
+    @constraint(model, stri'*src_strain_array .<= S*dest_strain_array) # ensure that only strains meant to be dispensed are dispensed 
+    @constraint(model, sum([shot_density[:,r] .* q[:,:,r] for r in 1:R]) .>= inoculation_quantity*stri) # ensure that if a strain is dispensed, its total dispense quantity is at least the inoculation quanttity 
+
+    for r in 1:R 
+        if robot[r].properties.isdiscrete 
+        set_integer.(q[:,:,r])  
+        @constraint(model, q[:,:,r] .>= qi[:,:,r]) # enforce activity constraint
+        else 
+            for s in 1:S 
+                @constraint(model, q[s,:,r] .>= minShots[s,r]*qi[s,:,r]) # if a dispense is active it must be larger than the minimum shot volume for the robot. This formulates q as a semicontinuous variable from (minshotval, Inf)
+            end 
+        end
     end
+
+ 
+
+
+    for s in 1:S
+        for d in 1:D
+            for r in 1:R
+                if !(source_compatibility[s,r] && destination_compatibility[d,r])
+                    @constraint(model, q[s,d,r]==0) # don't allow transfers with incompatible robots
+                end
+            end 
+        end 
+    end 
+
+    
     for i in 1:I
         if priority[all_ingredients[i]] == 0
             for d in 1:D
-                @constraint(model, slacks[d,i]==0) # priority 0 ingredients must hit the target exactly for each destination. The slack must be zero. We can only enforce this for semicontinuous dispensers. 
+                @constraint(model, slacks[d,i]==0) # priority 0 ingredients must hit the target exactly for each destination. The slack must be zero (because the delivered quantity must be zero)  
             end 
         end 
     end 
     
-    for s in 1:S
-        for d in 1:D 
-            @constraint(model, !qi[s,d] => {q[s,d]== 0}) # tie the transfer indicator to the transfers
-        end 
-    end 
 
     if require_nonzero 
         for i in 1:I
             sources_with_ingredient=sc[:,i] .> 0 
             for d in 1:D
                 if dq[d,i] > 0 
-                    @constraint(model,sum(qi[:,d] .* sources_with_ingredient) >=1) # check that at least one transfer happens if an ingredient is needed in a destination, even if the optimial solution is to not dispense anything. 
+                    @constraint(model,sum(qi[:,d,:] .* sources_with_ingredient) >=1) # check that at least one transfer happens if an ingredient is needed in a destination, even if the optimial solution is to not dispense anything. 
                 end 
             end 
         end 
@@ -416,9 +482,11 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robot::Robot
 
     for sl in 1:SL 
         for dl in 1:DL
-            @constraint(model, lw[sl,dl]==sum(q[slw_idxs[sl],dlw_idxs[dl]])) # constrain the labware volume to track the dispenses from each source labware to each destination labware
+            @constraint(model, lw[sl,dl]==sum([shot_density[slw_idxs[sl],r] .* q[slw_idxs[sl],dlw_idxs[dl],r] for r in 1:R])) # constrain the labware volume to track the dispenses from each source location to each destination location 
         end
     end 
+
+
     priority_levels= sort(unique(collect(values(priority))))
     for level in priority_levels  # pass through all priority levels from lowest to higest level
 
@@ -496,7 +564,8 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robot::Robot
 
 
     cap_vals=JuMP.value.(caps) 
-    quants=JuMP.value.(q)
+    shots=JuMP.value.(q)
+    quants= sum([shot_density[:,r] .* shots[:,:,r] for r in 1:R])
 
     sources_needed=sum(quants,dims=2)
 
@@ -505,12 +574,9 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robot::Robot
         overdraft_dict=Dict{JLIMS.Stock,Unitful.Quantity}()
         for i in findall(x-> x > 0 ,overdrafts)
             od=overdrafts[i]
-            if robot.properties.isdiscrete
-                od = od * minshotvals[i]
-            end 
-            overdraft_dict[available_sources[i]] = od * preferred_stock_quantity(available_sources[i])
+            overdraft_dict[sources[i]] = od * preferred_quantity(sources[i])
         end 
-        throw(OverdraftError("Refills are needed for $(length(collect(keys(overdraft_dict)))) stocks:",overdraft_dict))
+        throw(OverdraftError("Refills are needed for $(length(collect(keys(overdraft_dict)))) sources:",overdraft_dict))
     end 
 
 
