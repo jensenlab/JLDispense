@@ -209,12 +209,12 @@ function minimize_overdrafts!(model)
 end 
 
 
-function minimzie_robots(model) 
+function minimzie_robots!(model) 
     q=model[:q]
     S,D,R=size(q)
     @variable(model, robot_indicator[1:R],Bin)
     for r in 1:R 
-        @constraint(model,!robot_indicator[r]=> {sum(q[:,:,r] == 0)})
+        @constraint(model,!robot_indicator[r]=> {sum(q[:,:,r]) == 0})
     end 
     set_objective_sense(model, MOI.FEASIBILITY_SENSE)
     @objective(model, Min,sum(robot_indicator))
@@ -284,12 +284,12 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robots::Vect
     a,b=size(source_compatibility)
     (a,b) == (S,R) ? nothing : error("compatibility matrix size ($a x $b) does not agree with the stocks and robots ($(S) x $(R))")
     src_pairs= Iterators.product(sources,robots) |> collect # iterate all pairs of sources and robots 
-    all( source_compatibility .<= is_compatible.(src_pairs;source=true)) ? nothing : throw(StockCompatibilityError("at least one source -- robot pair is incompatible"))
+    all( source_compatibility .<= is_compatible_source.(src_pairs)) ? nothing : throw(StockCompatibilityError("at least one source -- robot pair is incompatible"))
 
 
     # calculate destination compatibility 
     dest_pairs= Iterators.product(destinations,robots) |> collect
-    destination_compatibility = is_compatibile.(dest_pairs;source=false) 
+    destination_compatibility = is_compatibile_destination.(dest_pairs) 
     
     # check keyword parameters  for issues 
     pad >= 1 ? nothing : error("padding factor must be greater than or equal to 1")
@@ -378,9 +378,9 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robots::Vect
     capvals=source_quantities/pad  # the maximum quantity of each source 
 
 
-    maxshot_param=Inf * ones(S,R)
-    minshot_param=zeros(S,R)
-    shot_density = ones(S,R) # assume that one shot delivers one unit of source 
+    maxshot_param=Inf * ones(S,R+1)
+    minshot_param=zeros(S,R+1)
+    shot_density = ones(S,R+1) # assume that one shot delivers one unit of source 
     for r in 1:R
         if robots[r].properties.isdiscrete
             maxshot_param[:,r]=maxshotvals[:,r] ./ minshotvals[:,r] # convert all masses and volumes to shots for the discrete problem 
@@ -402,20 +402,20 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robots::Vect
     set_attribute(model,"TimeLimit",timelimit)
 
     # Define constants 
-    @variable(model, minShots[1:S,1:R] in Parameter.(minshot_param))
-    @variable(model, maxShots[1:S,1:R] in Parameter.(maxshot_param))
+    @variable(model, minShots[1:S,1:R+1] in Parameter.(minshot_param))
+    @variable(model, maxShots[1:S,1:R+1] in Parameter.(maxshot_param))
     @variable(model, caps[1:S] in Parameter.(capvals)) # save a parameter for the volume of each available source
 
     # Define Model variables 
-    @variable(model, q[1:S,1:D,1:R]>=0) # q[s,d,r] = shots of source s transfered to destination d using robot r 
-    @variable(model, qi[1:S,1:D,1:R],Bin) #  Indicator for whether a transfer in q is active
+    @variable(model, q[1:S,1:D,1:(R+1)]>=0) # q[s,d,r] = shots of source s transfered to destination d using robot r . We add an extra 'null' robot that "transfers" contents of a single well to itself
+    @variable(model, qi[1:S,1:D,1:(R+1)],Bin) #  Indicator for whether a transfer in q is active
     @variable(model, stri[1:S,1:D],Bin) # strain transfer indicator 
     @variable(model,slacks[1:D,1:I]) # slack variables to measure the difference between the dispenses and the target quantities for each ingredient of each destination
     @variable(model, lw[1:SL,1:DL]>=0) # continuous variable to measure the total quantity dispensed from and to each labware 
      
     for s in 1:S
         for d in 1:D 
-            for r in 1:R
+            for r in 1:(R+1)
                 @constraint(model, !qi[s,d,r] => {q[s,d,r]== 0}) # tie the transfer indicator to the transfers
             end 
         end 
@@ -423,15 +423,15 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robots::Vect
 
     for s in 1:S 
         for d in 1:D 
-            @constraint(model, !stri[s,d] => {sum(qi[s,d,:]==0)})
+            @constraint(model, !stri[s,d] => {sum(qi[s,d,:])==0})
         end 
     end 
 
 
-    @constraint(model, sum([shot_density[:,r] .* q[:,:,r] for r in 1:R])'*sc .- slacks .== dq ) # create the destinations with the sources, allowing for some slack. This looks messy but it is a mass/volume balance. 
+    @constraint(model, sum([shot_density[:,r] .* q[:,:,r] for r in 1:(R+1)])'*sc .- slacks .== dq ) # create the destinations with the sources, allowing for some slack. This looks messy but it is a mass/volume balance. 
 
     @constraint(model, stri'*src_strain_array .<= S*dest_strain_array) # ensure that only strains meant to be dispensed are dispensed 
-    @constraint(model, sum([shot_density[:,r] .* q[:,:,r] for r in 1:R]) .>= inoculation_quantity*stri) # ensure that if a strain is dispensed, its total dispense quantity is at least the inoculation quanttity 
+    @constraint(model, sum([shot_density[:,r] .* q[:,:,r] for r in 1:(R+1)]) .>= inoculation_quantity*stri) # ensure that if a strain is dispensed, its total dispense quantity is at least the inoculation quanttity 
 
     for r in 1:R 
         if robot[r].properties.isdiscrete 
@@ -444,6 +444,17 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robots::Vect
         end
     end
 
+    for s in 1:S 
+        for d in 1:D 
+            if JLIMS.well(sources[s]) == JLIMS.well(destinations[d]) # if the source well is the same as the destination well, the entire quantity of the source must be transferred to the destination
+                @constraint(model,shot_density[s,R+1]*q[s,d,R+1]==source_quantities[s]) # the total quantity must be the source quantity
+                @constraint(model,q[s,:,1:R].==0) # all dispenses on other robots must be zero for the source
+                @constraint(model,q[s,setdiff(1:D,d),R+1].==0) # the `null` robot cannot be used for other destinations
+            else 
+                @constraint(model,shot_density[s,R+1]*q[s,d,R+1]==0)  # the `null` robot cannot be used for the source-dispense pair
+            end 
+        end 
+    end 
  
 
 
@@ -565,40 +576,39 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robots::Vect
 
     cap_vals=JuMP.value.(caps) 
     shots=JuMP.value.(q)
-    quants= sum([shot_density[:,r] .* shots[:,:,r] for r in 1:R])
+    quants= cat([shot_density[:,r] .* shots[:,:,r] for r in 1:R]...,dims=3) # creates an S x D x R array of the actual quantities 
+    
+    
 
-    sources_needed=sum(quants,dims=2)
+    sources_needed=sum(quants,dims=[3,2]) # the total quantity of each source across all robots and destinations.
 
     overdrafts = sources_needed .- cap_vals
     if any(overdrafts .>overdraft_tolerance) 
-        overdraft_dict=Dict{JLIMS.Stock,Unitful.Quantity}()
+        overdraft_dict=Dict{JLIMS.Culture,Unitful.Quantity}()
         for i in findall(x-> x > 0 ,overdrafts)
             od=overdrafts[i]
             overdraft_dict[sources[i]] = od * preferred_quantity(sources[i])
         end 
         throw(OverdraftError("Refills are needed for $(length(collect(keys(overdraft_dict)))) sources:",overdraft_dict))
     end 
-
-
-    transfers=DataFrame()    
-    for dest in destinations
-        quantities=Any[]
-        d=findfirst(x->x==dest,destinations)
-        for src in sources
-            un=preferred_stock_quantity(src)
-            if in(src,available_sources)
-                s=findfirst(x->x==src,available_sources)
-                val=quants[s,d]
-                if robot.properties.isdiscrete
-                    val=Int64(round(val))*minshotvals[s]
-                end 
-                push!(quantities,val*un) # commit the transfer to the transfers vector for this destination stock 
-            else
-                push!(quantities,0*un) # commit a 0 to the transfers vector
+    transfers=DataFrame[]   
+    
+    for robot in robots 
+        r = findfirst(x->x==robot,robots)
+        tf = DataFrame()
+        for dest in destinations
+            quantities=Any[]
+            d=findfirst(x->x==dest,destinations)
+            for src in sources
+                un=preferred_stock_quantity(src)
+                    s=findfirst(x->x==src,sources)
+                    val=quants[s,d,r]
+                    push!(quantities,val*un) # commit the transfer to the transfers vector for this destination stock 
             end 
-        end 
-        transfers[:,Symbol("Well$(dest.well.id)")]=quantities
-    end 
+            tf[:,Symbol("Well$(dest.well.id)")]=quantities
+        end
+        push!(transfers,tf)
+    end  
     println("Solution off target by $(sum(JuMP.value.(slacks).^2)/sum(dq.^2)*100)%")
 
     if return_model
@@ -608,6 +618,28 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robots::Vect
     end 
 end 
     
+function dispense_solver(sources,destinations,robots::Vector{V},secondary_objectives...;kwargs...) where  V<:Robot
+        # calculate destination compatibility 
+        src_pairs= Iterators.product(sources,robots) |> collect
+        source_compatibility = is_compatibile_source.(src_pairs) 
+        return dispense_solver(sources,destinations,robots,source_compatibility,secondary_objectives...;kwargs...)
+end 
+
+function dispense_solver(sources::Vector{T},destinations,robots,source_compatibility,secondary_objectives...;kwargs...) where T<:JLIMS.Stock
+    srcs = convert.((JLIMS.Culture,),sources)
+    return dispense_solver(srcs,destinations,robots,source_compatibility,secondary_objectives...;kwargs...)
+end 
+
+function dispense_solver(sources,destinations::Vector{U},robots,source_compatibility,secondary_objectives...;kwargs...) where U<:JLIMS.Stock
+    dests = convert.((JLIMS.Culture,),destinations)
+    return dispense_solver(sources,dests,robots,source_compatibility,secondary_objectives...;kwargs...)
+end 
+
+function dispense_solver(sources::Vector{T},destinations::Vector{T},robots,source_compatibility,secondary_objectives...;kwargs...) where T<:JLIMS.Stock
+    srcs = convert.((JLIMS.Culture,),sources)
+    dests = convert.((JLIMS.Culture,),destinations)
+    return dispense_solver(srcs,dests,robots,source_compatibility,secondary_objectives...;kwargs...)
+end
 
 
 

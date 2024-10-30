@@ -49,12 +49,12 @@ const cobra_names=Dict{JLIMS.Container,AbstractString}(
   wp96=>"96 Costar",
   wp384=>"384 Well p/n 3575 3576")
 
-const default_cobra_deck_1=DeckPosition("Deck 1",true,1,[
+const default_cobra_deck_1=DeckPosition("Deck 1",true,true,1,[
   dwp96_2ml,
   dwp96_1ml
 ])
 
-const default_cobra_deck_2=DeckPosition("Deck 2",false,1,[
+const default_cobra_deck_2=DeckPosition("Deck 2",true,true,1,[
   dwp96_2ml,
   dwp96_1ml,
   wp384,

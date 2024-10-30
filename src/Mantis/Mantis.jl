@@ -27,9 +27,9 @@ end
   wp384=>"PT9-384-Assay.pd.txt")
 
   
-  const default_mantis_hv=DeckPosition("High Volume",true,1,missing)
-  const default_mantis_lc3=DeckPosition("LC3",true,1,missing)
-  const default_mantis_destination=DeckPosition("Destination",false,1,[wp96,wp384])
+  const default_mantis_hv=DeckPosition("High Volume",true,false,1,missing)
+  const default_mantis_lc3=DeckPosition("LC3",true,false,1,missing)
+  const default_mantis_destination=DeckPosition("Destination",false,true,1,[wp96,wp384])
   
   mantis_default = Mantis("Default Mantis",
   MantisProperties(true,0.1u"µL",100u"mL",vcat([default_mantis_hv for _ in 1:4],[default_mantis_lc3 for _ in 1:24],[default_mantis_destination]),[JLIMS.LiquidStock]),

@@ -26,8 +26,8 @@ end
   wp384=>"PT9-384-Assay.pd.txt")
 
   
-  const default_tempest_source=DeckPosition("Front Rack",true,6,missing)
-  const default_tempest_destination=DeckPosition("Destination",false,1,[wp96,wp384])
+  const default_tempest_source=DeckPosition("Front Rack",true,false,6,missing)
+  const default_tempest_destination=DeckPosition("Destination",false,true,1,[wp96,wp384])
   
   tempest_default = Tempest("Default Tempest",
   TempestProperties(true,0.2u"µL",1000u"mL",vcat([default_tempest_source],[default_tempest_destination for _ in 1:10]),[JLIMS.LiquidStock]),

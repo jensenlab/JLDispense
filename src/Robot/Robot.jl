@@ -7,7 +7,8 @@ abstract type RobotConfiguration end
 
 struct DeckPosition 
     name::AbstractString
-    is_source::Bool
+    can_aspirate::Bool
+    can_dispense::Bool
     slots::Integer
     compatible_containers::Union{Vector{JLIMS.Container},Missing}
 end 

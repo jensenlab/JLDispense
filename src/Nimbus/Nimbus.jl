@@ -29,17 +29,17 @@ struct NimbusProperties <: RobotProperties
 
 # Define our available racks
 #15 mL tube
-TubeRack15ML_0001=DeckPosition("TubeRack15ML_0001",true,24,[conical_15])
+TubeRack15ML_0001=DeckPosition("TubeRack15ML_0001",true,true,24,[conical_15])
 # 50 mL tube
-TubeRack50ML_0001=DeckPosition("TubeRack50ML_0001",true,6,[conical_50])
-TubeRack50ML_0002=DeckPosition("TubeRack50ML_0002",true,6,[conical_50])
-TubeRack50ML_0003=DeckPosition("TubeRack50ML_0003",true,6,[conical_50])
-TubeRack50ML_0004=DeckPosition("TubeRack50ML_0004",true,6,[conical_50])
-TubeRack50ML_0005=DeckPosition("TubeRack50ML_0005",true,6,[conical_50])
-TubeRack50ML_0006=DeckPosition("TubeRack50ML_0006",true,6,[conical_50])
+TubeRack50ML_0001=DeckPosition("TubeRack50ML_0001",true,true,6,[conical_50])
+TubeRack50ML_0002=DeckPosition("TubeRack50ML_0002",true,true,6,[conical_50])
+TubeRack50ML_0003=DeckPosition("TubeRack50ML_0003",true,true,6,[conical_50])
+TubeRack50ML_0004=DeckPosition("TubeRack50ML_0004",true,true,6,[conical_50])
+TubeRack50ML_0005=DeckPosition("TubeRack50ML_0005",true,true,6,[conical_50])
+TubeRack50ML_0006=DeckPosition("TubeRack50ML_0006",true,true,6,[conical_50])
 # 2 mL deep well plate
-Cos_96_DW_2mL_0001=DeckPosition("Cos_96_DW_2mL_0001",false,1,[dwp96_2ml,wp96])
-Cos_96_DW_2mL_0002=DeckPosition("Cos_96_DW_2mL_0002",false,1,[dwp96_2ml,wp96])
+Cos_96_DW_2mL_0001=DeckPosition("Cos_96_DW_2mL_0001",true,true,1,[dwp96_2ml,wp96])
+Cos_96_DW_2mL_0002=DeckPosition("Cos_96_DW_2mL_0002",true,true,1,[dwp96_2ml,wp96])
 
 
 default_nimbus_config=[
