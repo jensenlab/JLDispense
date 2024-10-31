@@ -8,7 +8,7 @@ SMU_UA159=strains[1]
 conical_50=Container("conical_50ml",50u"mL",(1,1))
 WP96=Container("plate_96",200u"µL",(8,12))
 dwp96_2ml=JLIMS.Container("deep_well_plate_96_2_ml",2.0u"mL",(8,12))
-
+bottle_250=JLIMS.Container("bottle_250mL",250.0u"mL",(1,1))
 function ing(name;ings=chemicals)
     return ings[findfirst(x->x.name==name,ings)]
 end 
@@ -236,6 +236,8 @@ cdm_2x_glucose1=JLIMS.Stock(
 
 
 
+
+
 smu= Culture(
     str("SMU_UA159"),
     JLIMS.Stock(
@@ -255,4 +257,67 @@ ssa= Culture(
     50u"mL",
     JLIMS.Well(24,24,1,conical_50)
 ))
+
+
+cdm_2x_glucose1=JLIMS.Stock(
+    JLIMS.Composition(Dict(
+        ing("adenine")=>0.04u"g/L",
+        ing("biotin")=> 0.0004u"g/L",
+        ing("glucose")=>20u"g/L",
+        ing("folic_acid")=>0.0016u"g/L",
+        ing("guanine")=>0.04u"g/L",
+        ing("iron_sulfate")=>0.01u"g/L",
+        ing("iron_nitrate")=>0.002u"g/L",
+        ing("magnesium_sulfate")=>1.4u"g/L",
+        ing("manganese_sulfate")=>0.01u"g/L",
+        ing("b_nadph")=>0.005u"g/L",
+        ing("niacinamide")=>0.002u"g/L",
+        ing("paba")=>0.0004u"g/L",
+        ing("pantothenate")=>0.004u"g/L",
+        ing("pyridoxal_hydrochloride")=>0.002u"g/L",
+        ing("pyridoxamine")=>0.002u"g/L",
+        ing("riboflavin")=>0.004u"g/L",
+        ing("sodium_acetate")=>9u"g/L",
+        ing("thiamine")=>0.002u"g/L",
+        ing("uracil")=>0.04u"g/L",
+        ing("vitamin_b12")=>0.0002u"g/L",
+        ing("water")=>100u"percent"
+    )),
+    250u"mL",
+    JLIMS.Well(24,24,1,bottle_250)
+)
+
+aas=[water,alanine,arginine,asparagine,aspartic_acid,glutamine,glutamic_acid,glycine,histidine,isoleucine,leucine,lysine,methionine,phenylalanine,proline,serine,threonine,tryptophan,tyrosine,valine,cysteine]
+
+well=24
+plate=25 
+dwp_stocks=JLIMS.Stock[]
+
+for i in 1:96
+    aa_stocks=repeat(aas,inner=5)
+    st=JLIMS.Stock(JLIMS.Empty(),missing,JLIMS.Well(well+i,plate,i,dwp96_2ml))
+    out_donor,out_rec=JLIMS.transfer(aa_stocks[i],st,2u"ml")
+    push!(dwp_stocks,out_rec)
+end 
+
+plate=26 
+well=24+96
+
+
+plate_stocks=JLIMS.Stock[]
+for i in 1:96 
+    st=JLIMS.Stock(JLIMS.Empty(),missing,JLIMS.Well(well+i,plate,i,plate_96))
+    don,st1=JLIMS.transfer(water,st,40u"µL")
+    for j in 2:length(aas)
+        if mod(i,j) == 0 
+            continue
+        else 
+            don,st1=JLIMS.transfer(aas[j],st1,2u"µL")
+        end 
+    end 
+    push!(plate_stocks,st1)
+end 
+
+
+    
 
