@@ -76,7 +76,7 @@ end
 
 function concentration(culture::JLIMS.Culture,ingredient::JLIMS.Chemical)
     if ingredient in ingredients(culture.media.composition)
-        return uconvert(preferred_quantity(ingredient)/preferrred_quantity(culture),culture.media.composition.ingredients[ingredient])
+        return uconvert(preferred_quantity(ingredient)/preferred_quantity(culture),culture.media.composition.ingredients[ingredient])
     else 
         return 0 * preferred_quantity(ingredient)/preferred_quantity(culture)
     end 
@@ -91,9 +91,9 @@ Return the quantity of an ingredient in a stock using the preferred units for th
 """
 function quantity(stock::JLIMS.Stock,ingredient::JLIMS.Chemical)
     if ingredient in ingredients(stock.composition)
-        return uconvert(preferred_ingredient_quantity(ingredient),stock.composition.ingredients[ingredient]*stock.quantity)
+        return uconvert(preferred_quantity(ingredient),stock.composition.ingredients[ingredient]*stock.quantity)
     else
-        return 0*preferred_ingredient_quantity(ingredient)
+        return 0*preferred_quantity(ingredient)
     end 
 end 
 
@@ -105,7 +105,7 @@ function quantity(culture::JLIMS.Culture,ingredient::JLIMS.Chemical)
     end 
 end 
 
-function ingredient_array(stocks::Vector{T},ingredients::Vector{JLIMS.Ingredient};measure=concentration) where T<: Union{JLIMS.Stock,JLIMS.Culture} # can return concentration or quantity 
+function ingredient_array(stocks::Vector{T},ingredients::Vector{JLIMS.Chemical};measure=concentration) where T<: Union{JLIMS.Stock,JLIMS.Culture} # can return concentration or quantity 
     S=length(stocks)
     out=DataFrame()
         for i in ingredients 
@@ -120,14 +120,14 @@ function ingredient_array(stocks::Vector{T},ingredients::Vector{JLIMS.Ingredient
 end 
 
             
-function ingredient_array(stock::Union{JLIMS.Stock,JLIMS.Culture},ingredients::Vector{JLIMS.Ingredient})
+function ingredient_array(stock::Union{JLIMS.Stock,JLIMS.Culture},ingredients::Vector{JLIMS.Chemical})
     return ingredient_array([stock],ingredients)
 end 
 
 
-function strain_array(cultures::Vector{JLIMS.Culture},strains::Vector{JLIMS.Strain})
+function strain_array(cultures::Vector{T},strains::Vector{JLIMS.Strain}) where T<:JLIMS.Culture
     pairs=Iterators.product(strains,cultures) |> collect 
-    out = in.(pairs)
+    out = Base.splat(in).(pairs)
     return out' # output expected bo be cultures by strains instead of strains by cultures
 end  
 
@@ -165,11 +165,11 @@ function minimize_transfers!(model) # only use in the context of dispense solver
 end 
 
 function minimize_sources!(model) # only use in the context of dispense_solver, this function relies on model variables defined in dispense solver
-    S,D,R=size(model[:q])
-    q=model[:q]
+    S,D,R=size(model[:shots])
+    shots=model[:shots]
     @variable(model,source_indicator[1:S],Bin) # Define an indicator for whether a source s is active
     for s in 1:S
-        @constraint(model, !source_indicator[s]=>{sum(q[s,:,:]) == 0}) # turn the indicator on if there is a nonzero transfer from source s to any destination
+        @constraint(model, !source_indicator[s]=>{sum(shots[s,:,:]) == 0}) # turn the indicator on if there is a nonzero transfer from source s to any destination
     end 
     set_objective_sense(model, MOI.FEASIBILITY_SENSE)
     @objective(model, Min,sum(source_indicator))
@@ -196,10 +196,11 @@ end
 function minimize_overdrafts!(model) 
     S=length(model[:caps])
     q=model[:q]
+    S,D,M=size(q)
     caps=model[:caps]
     @variable(model, overdraft_indicator[1:S],Bin)
     for s in 1:S 
-        @constraint(model, !overdraft_indicator[s]=>{sum(q[s,:,:])<=caps[s]})
+        @constraint(model, !overdraft_indicator[s]=>{sum(q[s,:,1:(M-1)])<=caps[s]})
     end 
     set_objective_sense(model, MOI.FEASIBILITY_SENSE)
     @objective(model, Min,sum(overdraft_indicator))
@@ -209,12 +210,15 @@ function minimize_overdrafts!(model)
 end 
 
 
-function minimzie_robots!(model) 
-    q=model[:q]
-    S,D,R=size(q)
-    @variable(model, robot_indicator[1:R],Bin)
+function minimize_robots!(model) 
+    shots=model[:shots]
+    S,D,M=size(shots)
+    R=M-1
+    @variable(model, robot_indicator[1:S,1:R],Bin)
     for r in 1:R 
-        @constraint(model,!robot_indicator[r]=> {sum(q[:,:,r]) == 0})
+        for s in 1:S
+            @constraint(model,!robot_indicator[s,r]=> {sum(shots[s,:,r]) == 0})
+        end 
     end 
     set_objective_sense(model, MOI.FEASIBILITY_SENSE)
     @objective(model, Min,sum(robot_indicator))
@@ -234,9 +238,10 @@ function enforce_maxShots!(model)
 end
 
 function minimize_overshots!(model)
-    S,D=size(model[:q])
-    q=model[:q]
+    shots=model[:shots]
+    S,D,M=size(shots)
     maxShots=model[:maxShots]
+    R=M-1
     @variable(model,overshot_indicator[1:S,1:D,1:R],Bin)
     for s in 1:S
         for d in 1:D
@@ -279,17 +284,21 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robots::Vect
     S= length(sources) 
     D= length(destinations) 
     R= length(robots)
+
     
     # check that the source compatibility matrix is valid  
     a,b=size(source_compatibility)
     (a,b) == (S,R) ? nothing : error("compatibility matrix size ($a x $b) does not agree with the stocks and robots ($(S) x $(R))")
     src_pairs= Iterators.product(sources,robots) |> collect # iterate all pairs of sources and robots 
-    all( source_compatibility .<= is_compatible_source.(src_pairs)) ? nothing : throw(StockCompatibilityError("at least one source -- robot pair is incompatible"))
+    all( source_compatibility .<= Base.splat(is_compatible_source).(src_pairs)) ? nothing : throw(StockCompatibilityError("at least one source -- robot pair is incompatible"))
 
 
     # calculate destination compatibility 
     dest_pairs= Iterators.product(destinations,robots) |> collect
-    destination_compatibility = is_compatibile_destination.(dest_pairs) 
+    destination_compatibility = Base.splat(is_compatible_destination).(dest_pairs) 
+    at_least_one_robot=sum(destination_compatibility,dims=2) .>= 1 
+    all(at_least_one_robot) ? nothing : error("at least one destination has no compatible robots")
+
     
     # check keyword parameters  for issues 
     pad >= 1 ? nothing : error("padding factor must be greater than or equal to 1")
@@ -301,6 +310,7 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robots::Vect
     maxshots = Inf * ones(S,R)
     for s in 1:S
         for r in 1:R 
+            robot=robots[r]
             stock= sources[s].media  
             minshots[s,r] = ustrip(uconvert(u"µL",hasproperty(robot.properties,:minVol) ? robot.properties.minVol : 0u"µL"))
             maxshots[s,r]=ustrip(uconvert(u"µL",hasproperty(robot.properties,:maxVol) ? robot.properties.maxVol : Inf*u"µL"))
@@ -320,23 +330,26 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robots::Vect
     I= length(all_ingredients)
 
     # gather all strains contained in the sources and destinations 
-    source_strains = unique(filter(y->!ismissing(y),vcat(map(x->x.strains,sources)...)))
-    destination_strains = unique(filter(y->!ismissing(y),vcat(map(x->x.strains,destinations)...)))
-    all_strains= union(source_strains,destination_strains)
+    all_strains=JLIMS.Strain[]
+    source_strains = unique(vcat(filter(y->!ismissing(y),map(x->x.strains,sources))...))
+    destination_strains = unique(vcat(filter(y->!ismissing(y),map(x->x.strains,destinations))...))
+    all_strains=push!(all_strains,source_strains...)
+    all_strains=push!(all_strains,destination_strains...)
     Y=length(all_strains)
-    src_strain_array=strain_array(sources,strains)
-    dest_strain_array=strain_array(destinations,strains)
+    src_strain_array=strain_array(sources,all_strains)
+
+    dest_strain_array=strain_array(destinations,all_strains)
 
     # group all available_sources by location 
-    src_labware=unique(map(x->x.well.labwareid,available_sources))
+    src_labware=unique(map(x->JLIMS.well(x).locationid,sources))
     SL=length(src_labware)
-    slw_idxs=[findall(x->x.well.labwareid==src_labware[l],available_sources) for l in 1:SL ]
+    slw_idxs=[findall(x->JLIMS.well(x).locationid==src_labware[l],sources) for l in 1:SL ]
 
 
     # group all destinations by location 
-    dest_labware=unique(map(x->x.well.labwareid,destinations))
+    dest_labware=unique(map(x->well(x).locationid,destinations))
     DL=length(dest_labware)
-    dlw_idxs=[findall(x->x.well.labwareid==dest_labware[l],destinations) for l in 1:DL ]
+    dlw_idxs=[findall(x->well(x).locationid==dest_labware[l],destinations) for l in 1:DL ]
 
     # get and convert the source stock quantities for overdraft constants 
     source_quantities = ustrip.(map(x->uconvert(preferred_quantity(x),JLIMS.quantity(x)),sources))
@@ -355,7 +368,7 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robots::Vect
 
     if length(missing_ingredients) > 0 
             ings=map(x->x.name,missing_ingredients)
-            throw(MissingIngredientError("No valid source of $(join(ings,",")) available to complete the dispenses",ings))
+            throw(MissingIngredientError("No valid source of $(join(ings,", ")) available to complete the dispenses",ings))
     end 
 
     # Update priorities: priority increases with decreasing level
@@ -377,22 +390,22 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robots::Vect
 
     capvals=source_quantities/pad  # the maximum quantity of each source 
 
-
     maxshot_param=Inf * ones(S,R+1)
     minshot_param=zeros(S,R+1)
     shot_density = ones(S,R+1) # assume that one shot delivers one unit of source 
     for r in 1:R
         if robots[r].properties.isdiscrete
-            maxshot_param[:,r]=maxshotvals[:,r] ./ minshotvals[:,r] # convert all masses and volumes to shots for the discrete problem 
-            minshot_param[:,r]=minshotvals[:,r] ./ minshotvals[:,r]
-            shot_density[:,r] = deepcopy(minshotvals[:,r]) # for discrete robots, one shot delivers the minimum shot value
+            maxshot_param[:,r].=maxshots[:,r] ./ minshots[:,r] # convert all masses and volumes to shots for the discrete problem 
+            minshot_param[:,r].=minshots[:,r] ./ minshots[:,r]
+            shot_density[:,r] .= deepcopy(minshots[:,r]) # for discrete robots, one shot delivers the minimum shot value
         else 
-            maxshot_param[:,r] = maxshotvals[:,r]
-            minshot_param[:,r]= minshotvals[:,r]
+            maxshot_param[:,r] .= maxshots[:,r]
+            minshot_param[:,r].= minshots[:,r]
         end 
     end 
 
-
+    maxshot_param[:,(R+1)] .= source_quantities
+    minshot_param[:,(R+1)].= source_quantities
 
     # initialize the JuMP model 
     model=Model(Gurobi.Optimizer) 
@@ -400,83 +413,96 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robots::Vect
         set_silent(model)
     end 
     set_attribute(model,"TimeLimit",timelimit)
-
+    M=R+1
     # Define constants 
-    @variable(model, minShots[1:S,1:R+1] in Parameter.(minshot_param))
-    @variable(model, maxShots[1:S,1:R+1] in Parameter.(maxshot_param))
+    @variable(model, minShots[1:S,1:M] in Parameter.(minshot_param))
+    @variable(model, maxShots[1:S,1:M] in Parameter.(maxshot_param))
     @variable(model, caps[1:S] in Parameter.(capvals)) # save a parameter for the volume of each available source
 
     # Define Model variables 
-    @variable(model, q[1:S,1:D,1:(R+1)]>=0) # q[s,d,r] = shots of source s transfered to destination d using robot r . We add an extra 'null' robot that "transfers" contents of a single well to itself
-    @variable(model, qi[1:S,1:D,1:(R+1)],Bin) #  Indicator for whether a transfer in q is active
+    @variable(model, shots[1:S,1:D,1:M]>=0) # q[s,d,r] = shots of source s transfered to destination d using robot r . We add an extra 'null' robot that "transfers" contents of a single well to itself
+    @variable(model,q[1:S,1:D,1:M]>=0)
+    @variable(model,qt[1:S,1:D]>=0)
+    @variable(model, qi[1:S,1:D,1:M],Bin) #  Indicator for whether a transfer in q is active
     @variable(model, stri[1:S,1:D],Bin) # strain transfer indicator 
     @variable(model,slacks[1:D,1:I]) # slack variables to measure the difference between the dispenses and the target quantities for each ingredient of each destination
     @variable(model, lw[1:SL,1:DL]>=0) # continuous variable to measure the total quantity dispensed from and to each labware 
-     
+    @variable(model,strain_slacks[1:D,1:Y])
     for s in 1:S
         for d in 1:D 
-            for r in 1:(R+1)
-                @constraint(model, !qi[s,d,r] => {q[s,d,r]== 0}) # tie the transfer indicator to the transfers
+            for r in 1:M
+                @constraint(model, q[s,d,r] == shots[s,d,r]*shot_density[s,r])
+                @constraint(model, !qi[s,d,r] => {shots[s,d,r]== 0}) # tie the transfer indicator to the transfers
             end 
+        end 
+    end 
+    for s in 1:S 
+        for d in 1:D 
+            @constraint(model,qt[s,d] == sum(q[s,d,:]))
         end 
     end 
 
     for s in 1:S 
         for d in 1:D 
-            @constraint(model, !stri[s,d] => {sum(qi[s,d,:])==0})
+            @constraint(model, !stri[s,d] => {sum(src_strain_array[s,:])*sum(shots[s,d,:])==0})
         end 
     end 
 
+    
+    @constraint(model, qt'*sc .- slacks .== dq ) # create the destinations with the sources, allowing for some slack. This looks messy but it is a mass/volume balance. 
 
-    @constraint(model, sum([shot_density[:,r] .* q[:,:,r] for r in 1:(R+1)])'*sc .- slacks .== dq ) # create the destinations with the sources, allowing for some slack. This looks messy but it is a mass/volume balance. 
-
-    @constraint(model, stri'*src_strain_array .<= S*dest_strain_array) # ensure that only strains meant to be dispensed are dispensed 
-    @constraint(model, sum([shot_density[:,r] .* q[:,:,r] for r in 1:(R+1)]) .>= inoculation_quantity*stri) # ensure that if a strain is dispensed, its total dispense quantity is at least the inoculation quanttity 
+    @constraint(model, stri'*src_strain_array .== dest_strain_array) # ensure that only strains meant to be dispensed are dispensed 
+    @constraint(model, qt'*src_strain_array .- strain_slacks .== inoculation_quantity*dest_strain_array) # ensure that if a strain is dispensed, meaure the discrepancy with the strain slack
 
     for r in 1:R 
-        if robot[r].properties.isdiscrete 
-        set_integer.(q[:,:,r])  
-        @constraint(model, q[:,:,r] .>= qi[:,:,r]) # enforce activity constraint
+        if robots[r].properties.isdiscrete 
+        set_integer.(shots[:,:,r])  
+        @constraint(model, shots[:,:,r] .>= qi[:,:,r]) # enforce activity constraint
         else 
             for s in 1:S 
-                @constraint(model, q[s,:,r] .>= minShots[s,r]*qi[s,:,r]) # if a dispense is active it must be larger than the minimum shot volume for the robot. This formulates q as a semicontinuous variable from (minshotval, Inf)
+                @constraint(model, shots[s,:,r] .>= minShots[s,r]*qi[s,:,r]) # if a dispense is active it must be larger than the minimum shot volume for the robot. This formulates q as a semicontinuous variable from (minshotval, Inf)
             end 
         end
     end
+    @constraint(model,shots[:,:,M] .>= minShots[:,M].*qi[:,:,M])
 
     for s in 1:S 
         for d in 1:D 
             if JLIMS.well(sources[s]) == JLIMS.well(destinations[d]) # if the source well is the same as the destination well, the entire quantity of the source must be transferred to the destination
-                @constraint(model,shot_density[s,R+1]*q[s,d,R+1]==source_quantities[s]) # the total quantity must be the source quantity
-                @constraint(model,q[s,:,1:R].==0) # all dispenses on other robots must be zero for the source
-                @constraint(model,q[s,setdiff(1:D,d),R+1].==0) # the `null` robot cannot be used for other destinations
+                @constraint(model,q[s,d,R+1]==source_quantities[s]) # the total quantity must be the source quantity
+                @constraint(model,shots[s,:,1:R].==0) # all dispenses on other robots must be zero for the source
+                @constraint(model,shots[s,setdiff(1:D,d),R+1].==0) # the `null` robot cannot be used for other destinations
             else 
-                @constraint(model,shot_density[s,R+1]*q[s,d,R+1]==0)  # the `null` robot cannot be used for the source-dispense pair
+                @constraint(model,shots[s,d,R+1]==0)  # the `null` robot cannot be used for the source-dispense pair
             end 
         end 
     end 
  
 
-
     for s in 1:S
         for d in 1:D
             for r in 1:R
                 if !(source_compatibility[s,r] && destination_compatibility[d,r])
-                    @constraint(model, q[s,d,r]==0) # don't allow transfers with incompatible robots
+                    @constraint(model, shots[s,d,r]==0) # don't allow transfers with incompatible robots
                 end
             end 
         end 
     end 
-
-    
+    for y in 1:Y 
+        for d in 1:D
+            if dest_strain_array[d,y] == false 
+                @constraint(model, strain_slacks[d,y]==0)
+            end 
+        end 
+    end 
     for i in 1:I
-        if priority[all_ingredients[i]] == 0
+        if priority[all_ingredients[i]] == UInt(0)
             for d in 1:D
                 @constraint(model, slacks[d,i]==0) # priority 0 ingredients must hit the target exactly for each destination. The slack must be zero (because the delivered quantity must be zero)  
             end 
         end 
     end 
-    
+
 
     if require_nonzero 
         for i in 1:I
@@ -488,14 +514,32 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robots::Vect
             end 
         end 
     end 
-
      
 
     for sl in 1:SL 
         for dl in 1:DL
-            @constraint(model, lw[sl,dl]==sum([shot_density[slw_idxs[sl],r] .* q[slw_idxs[sl],dlw_idxs[dl],r] for r in 1:R])) # constrain the labware volume to track the dispenses from each source location to each destination location 
+            @constraint(model, lw[sl,dl]==sum(qt[slw_idxs[sl],dlw_idxs[dl]])) # constrain the labware volume to track the dispenses from each source location to each destination location 
         end
     end 
+
+
+    set_objective_sense(model, MOI.FEASIBILITY_SENSE)
+    #target_bound=sum((inoculation_quantity*dest_strain_array).^2)
+    #set_attribute(model,"Cutoff",obj_cutoff* target_bound) # reject any solutions that are larger than the objective tolerance, which is a percentage of the sum squared target quantities.
+    #set_attribute(model, "BestObjStop",obj_tolerance*target_bound) 
+    @objective(model, Min,sum(strain_slacks.^2)) # penalize large slacks, search for q that minimize slacks.
+    optimize!(model)
+    println(termination_status(model)) 
+    current_strain_slacks=abs.(JuMP.value.(strain_slacks))
+    for y in 1:Y
+            delta=slack_tolerance * inoculation_quantity* dest_strain_array[:,y] # delta is the tolerance we give to updating the slack in higher priority levels, it is some fraction of the dispense target quantity for every destination. Wiggle room for the slack in future iterations 
+            current_strain_slack=current_strain_slacks[:,y]
+            @constraint(model, strain_slacks[:,y] .>= -current_strain_slack .- delta)
+            @constraint(model, strain_slacks[:,y] .<= current_strain_slack .+ delta)
+    end 
+    #reset the optimizer to remove the objective cutoff since we are switching objectives 
+    set_optimizer(model,Gurobi.Optimizer)
+    set_attribute(model,"TimeLimit",timelimit)
 
 
     priority_levels= sort(unique(collect(values(priority))))
@@ -531,6 +575,7 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robots::Vect
             end 
         elseif term == MOI.INFEASIBLE || term == MOI.INFEASIBLE_OR_UNBOUNDED
             println("infeasible solution")
+            println(term)
             compute_conflict!(model)
             out_cons=ConstraintRef[]
             if get_attribute(model, MOI.ConflictStatus()) == MOI.CONFLICT_FOUND
@@ -541,6 +586,11 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robots::Vect
                             push!(out_cons,con)
                         end 
                     catch 
+                    end 
+                end 
+                open("/Users/BDavid/Desktop/iis.txt","w") do file
+                    for con in out_cons
+                        println(file,con)
                     end 
                 end 
                 throw(MixingError("the requested destination stocks cannot be made using this combination of sources and robot \n the following constraints are in conflict:",out_cons))
@@ -575,12 +625,12 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robots::Vect
 
 
     cap_vals=JuMP.value.(caps) 
-    shots=JuMP.value.(q)
-    quants= cat([shot_density[:,r] .* shots[:,:,r] for r in 1:R]...,dims=3) # creates an S x D x R array of the actual quantities 
+    quants=JuMP.value.(q)[:,:,1:R]
+
     
     
 
-    sources_needed=sum(quants,dims=[3,2]) # the total quantity of each source across all robots and destinations.
+    sources_needed=sum(quants,dims=2) # the total quantity of each source across all robots and destinations.
 
     overdrafts = sources_needed .- cap_vals
     if any(overdrafts .>overdraft_tolerance) 
@@ -600,12 +650,12 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robots::Vect
             quantities=Any[]
             d=findfirst(x->x==dest,destinations)
             for src in sources
-                un=preferred_stock_quantity(src)
+                un=preferred_quantity(src)
                     s=findfirst(x->x==src,sources)
                     val=quants[s,d,r]
                     push!(quantities,val*un) # commit the transfer to the transfers vector for this destination stock 
             end 
-            tf[:,Symbol("Well$(dest.well.id)")]=quantities
+            tf[:,Symbol("Well$(well(dest).id)")]=quantities
         end
         push!(transfers,tf)
     end  
@@ -618,24 +668,24 @@ function dispense_solver(sources::Vector{T},destinations::Vector{U},robots::Vect
     end 
 end 
     
-function dispense_solver(sources,destinations,robots::Vector{V},secondary_objectives...;kwargs...) where  V<:Robot
+function dispense_solver(sources::Any,destinations::Any,robots::Vector{V},secondary_objectives...;kwargs...) where  V<:Robot
         # calculate destination compatibility 
         src_pairs= Iterators.product(sources,robots) |> collect
-        source_compatibility = is_compatibile_source.(src_pairs) 
+        source_compatibility = Base.splat(is_compatible_source).(src_pairs) 
         return dispense_solver(sources,destinations,robots,source_compatibility,secondary_objectives...;kwargs...)
 end 
 
-function dispense_solver(sources::Vector{T},destinations,robots,source_compatibility,secondary_objectives...;kwargs...) where T<:JLIMS.Stock
+function dispense_solver(sources::Vector{T},destinations::Any,robots::Vector{V},source_compatibility::BitMatrix,secondary_objectives...;kwargs...) where {T<:JLIMS.Stock,V<:Robot}
     srcs = convert.((JLIMS.Culture,),sources)
     return dispense_solver(srcs,destinations,robots,source_compatibility,secondary_objectives...;kwargs...)
 end 
 
-function dispense_solver(sources,destinations::Vector{U},robots,source_compatibility,secondary_objectives...;kwargs...) where U<:JLIMS.Stock
+function dispense_solver(sources,destinations::Vector{U},robots::Vector{V},source_compatibility::BitMatrix,secondary_objectives...;kwargs...) where {U<:JLIMS.Stock,V<:Robot}
     dests = convert.((JLIMS.Culture,),destinations)
     return dispense_solver(sources,dests,robots,source_compatibility,secondary_objectives...;kwargs...)
 end 
 
-function dispense_solver(sources::Vector{T},destinations::Vector{T},robots,source_compatibility,secondary_objectives...;kwargs...) where T<:JLIMS.Stock
+function dispense_solver(sources::Vector{T},destinations::Vector{T},robots::Vector{V},source_compatibility,secondary_objectives...;kwargs...) where {T<:JLIMS.Stock,V<:Robot}
     srcs = convert.((JLIMS.Culture,),sources)
     dests = convert.((JLIMS.Culture,),destinations)
     return dispense_solver(srcs,dests,robots,source_compatibility,secondary_objectives...;kwargs...)

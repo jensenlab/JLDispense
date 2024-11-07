@@ -259,7 +259,7 @@ ssa= Culture(
 ))
 
 
-cdm_2x_glucose1=JLIMS.Stock(
+cdm_2x_glucose2=JLIMS.Stock(
     JLIMS.Composition(Dict(
         ing("adenine")=>0.04u"g/L",
         ing("biotin")=> 0.0004u"g/L",
@@ -294,7 +294,7 @@ plate=25
 dwp_stocks=JLIMS.Stock[]
 
 for i in 1:96
-    aa_stocks=repeat(aas,inner=5)
+    aa_stocks=repeat(aas,outer=5)
     st=JLIMS.Stock(JLIMS.Empty(),missing,JLIMS.Well(well+i,plate,i,dwp96_2ml))
     out_donor,out_rec=JLIMS.transfer(aa_stocks[i],st,2u"ml")
     push!(dwp_stocks,out_rec)
@@ -306,8 +306,9 @@ well=24+96
 
 plate_stocks=JLIMS.Stock[]
 for i in 1:96 
-    st=JLIMS.Stock(JLIMS.Empty(),missing,JLIMS.Well(well+i,plate,i,plate_96))
+    st=JLIMS.Stock(JLIMS.Empty(),missing,JLIMS.Well(well+i,plate,i,WP96))
     don,st1=JLIMS.transfer(water,st,40u"µL")
+    don,st1=JLIMS.transfer(cdm_2x_glucose2,st1,100u"µL")
     for j in 2:length(aas)
         if mod(i,j) == 0 
             continue
@@ -317,7 +318,18 @@ for i in 1:96
     end 
     push!(plate_stocks,st1)
 end 
+cultures=JLIMS.Culture[]
+for i in 1:96
+    if mod(i,12)==0 
+        don,cul1=transfer(water,plate_stocks[i],2u"µL")
+        push!(cultures,cul1)
+    else
+        don,st1=transfer(smu,plate_stocks[i],2u"µL")
+        push!(cultures,st1)
+    end 
+end 
 
 
-    
+
+
 

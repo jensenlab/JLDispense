@@ -51,7 +51,9 @@ const cobra_names=Dict{JLIMS.Container,AbstractString}(
 
 const default_cobra_deck_1=DeckPosition("Deck 1",true,true,1,[
   dwp96_2ml,
-  dwp96_1ml
+  dwp96_1ml,
+  wp384,
+  wp96
 ])
 
 const default_cobra_deck_2=DeckPosition("Deck 2",true,true,1,[
@@ -63,7 +65,7 @@ const default_cobra_deck_2=DeckPosition("Deck 2",true,true,1,[
 
 
 cobra_default = Cobra("Default Cobra",
-CobraProperties(false,0.3u"µL",40u"µL",750u"µL",[default_cobra_deck_1,default_cobra_deck_2],[JLIMS.LiquidStock]),
+CobraProperties(false,0.3u"µL",40u"µL",750u"µL",[default_cobra_deck_1,default_cobra_deck_2],[JLIMS.LiquidStock,JLIMS.EmptyStock]),
 CobraConfiguration("N/A","N/A","A",1,8000,[0,0,0,0],1.1,1.7,["","","",""],["Water"],true,0,"C:\\Users\\Dell\\Dropbox (University of Michigan)\\JensenLab\\Cobra\\")
 )
 

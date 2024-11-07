@@ -30,7 +30,7 @@ end
   const default_tempest_destination=DeckPosition("Destination",false,true,1,[wp96,wp384])
   
   tempest_default = Tempest("Default Tempest",
-  TempestProperties(true,0.2u"µL",1000u"mL",vcat([default_tempest_source],[default_tempest_destination for _ in 1:10]),[JLIMS.LiquidStock]),
+  TempestProperties(true,0.2u"µL",1000u"mL",vcat([default_tempest_source],[default_tempest_destination for _ in 1:10]),[JLIMS.LiquidStock,JLIMS.EmptyStock]),
   TempestConfiguration("tube",false,300u"µL",0.5u"µL",300u"µL")
   )
 

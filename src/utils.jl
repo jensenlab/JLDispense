@@ -1,7 +1,7 @@
 function is_compatible_source(stock::JLIMS.Stock,robot::Robot)
     a = typeof(stock) in robot.properties.compatible_stocks  # make sure the robot can work with the stocktype 
     compatible_positions=filter(x->x.can_aspirate==true,robot.properties.positions)
-    if any(ismissing.(compatible_positions.compatible_containers))
+    if any(ismissing.(map(x->x.compatible_containers,compatible_positions)))
         return a 
     else 
         compatible_containers=unique(vcat(map(t->t.compatible_containers,compatible_positions)...))
@@ -17,7 +17,7 @@ end
 function is_compatible_destination(stock::JLIMS.Stock,robot::Robot)
     a = typeof(stock) in robot.properties.compatible_stocks  # make sure the robot can work with the stocktype 
     compatible_positions=filter(x->x.can_dispense==true,robot.properties.positions)
-    if any(ismissing.(compatible_positions.compatible_containers))
+    if any(ismissing.(map(x->x.compatible_containers,compatible_positions)))
         return a 
     else 
         compatible_containers=unique(vcat(map(t->t.compatible_containers,compatible_positions)...))
