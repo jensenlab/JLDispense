@@ -170,7 +170,7 @@ end
 
 
 
-function mixer(directory::AbstractString,sources::Vector{T},destinations::Vector{U},robot::Tempest,kwargs...) where {T <: JLIMS.Stock,U <:JLIMS.Stock}
+function mixer(directory::AbstractString,sources::Vector{T},destinations::Vector{U},robot::Tempest;kwargs...) where {T <: JLIMS.Stock,U <:JLIMS.Stock}
     design=dispense_solver(sources,destinations,robot,minimize_overdrafts!,minimize_sources!,minimize_transfers!;pad=1.1,kwargs...)
 
 
