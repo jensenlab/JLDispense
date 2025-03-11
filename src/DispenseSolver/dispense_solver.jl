@@ -43,20 +43,18 @@ Base.showerror(io,::IO, e::StockCompatibilityError)= print(io,e.msg)
 
 
 
-function preferred_quantity(ing::JLIMS.Chemical)
-    pref_ing_quant=Dict(JLIMS.Solid=>u"mg",JLIMS.Liquid=>u"µL")
-    return pref_ing_quant[typeof(ing)]
-end 
+preferred_quantity_unit(ing::JLIMS.Solid) =u"mg"
+preferred_quantit_unit(ing::JLIMS.Liquid) = u"µL"
 
-function preferred_quantity(stock::JLIMS.Stock)
-    pref_stock_quant=Dict(JLIMS.SolidStock=> u"mg",JLIMS.LiquidStock => u"µL")
-    return pref_stock_quant[typeof(stock)]
-end 
 
-function preferred_quantity(culture::JLIMS.Culture)
-    pref_culture_quant=Dict(JLIMS.SolidStock=> u"mg",JLIMS.LiquidStock => u"µL")
-    return pref_culture_quant[typeof(culture.media)]
-end
+preferred_quantity_unit(stock::JLIMS.Stock)= u"µL"
+preferred_quantity_unit(stock::JLIMS.Mixture) =u"mg"
+
+
+const chemical_access_dict=Dict(
+    JLIMS.Solid => JLIMS.solids 
+    JLIMS.Liquid => JLIMS.liquids
+)
 
 
 """ 
@@ -67,20 +65,13 @@ Return the concentration of an ingredient in a stock using the preferred units f
 
 """
 function concentration(stock::JLIMS.Stock,ingredient::JLIMS.Chemical) 
-    if ingredient in ingredients(stock.composition) 
-        return uconvert(preferred_quantity(ingredient)/preferred_quantity(stock),stock.composition.ingredients[ingredient])
+    if ingredient in stock 
+        return uconvert(preferred_quantity_unit(ingredient)/preferred_quantity_unit(stock),(chemical_access_dict[typeof(ingredient)])(stock)[ingredient]/quantity(stock))
     else
         return 0*preferred_quantity(ingredient)/preferred_quantity(stock)
     end 
 end 
 
-function concentration(culture::JLIMS.Culture,ingredient::JLIMS.Chemical)
-    if ingredient in ingredients(culture.media.composition)
-        return uconvert(preferred_quantity(ingredient)/preferred_quantity(culture),culture.media.composition.ingredients[ingredient])
-    else 
-        return 0 * preferred_quantity(ingredient)/preferred_quantity(culture)
-    end 
-end 
 
 """ 
     quantity(stock::JLIMS.Stock,ingredient::JLIMS.Ingredient)
@@ -91,21 +82,14 @@ Return the quantity of an ingredient in a stock using the preferred units for th
 """
 function quantity(stock::JLIMS.Stock,ingredient::JLIMS.Chemical)
     if ingredient in ingredients(stock.composition)
-        return uconvert(preferred_quantity(ingredient),stock.composition.ingredients[ingredient]*stock.quantity)
+        return uconvert(preferred_quantity(ingredient),(chemical_access_dict[typeof(ingredient)])(stock)[ingredient])
     else
         return 0*preferred_quantity(ingredient)
     end 
 end 
 
-function quantity(culture::JLIMS.Culture,ingredient::JLIMS.Chemical)
-    if ingredient in ingredients(culture.media.composition)
-        return uconvert(preferred_quantity(ingredient),JLIMS.composition(culture).ingredients[ingredient]*JLIMS.quantity(culture))
-    else
-        return 0*preferred_quantity(ingredient)
-    end 
-end 
 
-function ingredient_array(stocks::Vector{T},ingredients::Vector{JLIMS.Chemical};measure=concentration) where T<: Union{JLIMS.Stock,JLIMS.Culture} # can return concentration or quantity 
+function ingredient_array(stocks::Vector{<:JLIMS.Stock},ingredients::Vector{<:JLIMS.Chemical};measure::Function=concentration) # can return concentration or quantity 
     S=length(stocks)
     out=DataFrame()
         for i in ingredients 
@@ -113,27 +97,24 @@ function ingredient_array(stocks::Vector{T},ingredients::Vector{JLIMS.Chemical};
             for s in stocks
                 push!(vals,measure(s,i))
             end 
-            out[:,Symbol(i.name)]=vals
+            out[:,Symbol(JLIMS.name(i))]=vals
         end 
 
     return out
 end 
 
-            
-function ingredient_array(stock::Union{JLIMS.Stock,JLIMS.Culture},ingredients::Vector{JLIMS.Chemical})
-    return ingredient_array([stock],ingredients)
-end 
+        
 
 
-function strain_array(cultures::Vector{T},strains::Vector{JLIMS.Strain}) where T<:JLIMS.Culture
-    pairs=Iterators.product(strains,cultures) |> collect 
+function organism_array(stocks::Vector{<:JLIMS.Stock},orgs::Vector{JLIMS.Organism}) where T<:JLIMS.Culture
+    pairs=Iterators.product(orgs,stocks) |> collect 
     out = Base.splat(in).(pairs)
     return out' # output expected bo be cultures by strains instead of strains by cultures
 end  
 
 
 
-function transfer_table(sources::Vector{T},destinations::Vector{U},design::DataFrame) where {T <: Union{JLIMS.Culture,JLIMS.Stock},U <:Union{JLIMS.Culture,JLIMS.Stock}}
+function transfer_table(sources::Vector{<:JLIMS.Well},destinations::Vector{<:JLIMS.Well},design::DataFrame)
     transfer_table=DataFrame(Source=Integer[],Destination=Integer[],Quantity=Real[],Unit=AbstractString[])
     r=nrow(design)
     c=ncol(design)
@@ -144,8 +125,8 @@ function transfer_table(sources::Vector{T},destinations::Vector{U},design::DataF
             if quantity==0 
                 continue 
             else 
-                source=JLIMS.well(sources[row]).id 
-                destination=JLIMS.well(destinations[col]).id
+                source=JLIMS.location_id(sources[row])
+                destination=JLIMS.location_id(destinations[col])
                 un=string(unit(val))
                 push!(transfer_table,(source,destination,quantity,un))
             end 
@@ -153,126 +134,6 @@ function transfer_table(sources::Vector{T},destinations::Vector{U},design::DataF
     end 
     return transfer_table
 end 
-
-
-function minimize_transfers!(model) # only use in the context of dispense solver, this function relies on model variables defined in dispense solver
-    qi=model[:qi] # the transfer indicator in the main model
-    set_objective_sense(model, MOI.FEASIBILITY_SENSE)
-    @objective(model, Min,sum(qi))
-    optimize!(model)
-    ti=JuMP.value.(qi) 
-    @constraint(model,sum(qi)<=sum(ti))
-end 
-
-function minimize_sources!(model) # only use in the context of dispense_solver, this function relies on model variables defined in dispense solver
-    S,D,R=size(model[:shots])
-    shots=model[:shots]
-    @variable(model,source_indicator[1:S],Bin) # Define an indicator for whether a source s is active
-    for s in 1:S
-        @constraint(model, !source_indicator[s]=>{sum(shots[s,:,:]) == 0}) # turn the indicator on if there is a nonzero transfer from source s to any destination
-    end 
-    set_objective_sense(model, MOI.FEASIBILITY_SENSE)
-    @objective(model, Min,sum(source_indicator))
-    optimize!(model)
-    si=JuMP.value.(source_indicator)
-    @constraint(model,sum(source_indicator)<=sum(si))
-end 
-
-function minimize_labware!(model)
-    SL,DL=size(model[:lw])
-    lw=model[:lw]
-    @variable(model,labware_indicator[1:SL],Bin) # Define an indicator for whether a source s is active
-    for l in 1:SL
-        @constraint(model, !labware_indicator[l]=>{sum(lw[l,:]) == 0}) # turn the indicator on if there is a nonzero transfer from source s to any destination
-    end 
-    set_objective_sense(model, MOI.FEASIBILITY_SENSE)
-    @objective(model, Min,sum(labware_indicator))
-    optimize!(model)
-    li=JuMP.value.(labware_indicator)
-    @constraint(model,sum(labware_indicator)==sum(li))
-end 
-
-
-function minimize_overdrafts!(model) 
-    S=length(model[:caps])
-    q=model[:q]
-    S,D,M=size(q)
-    caps=model[:caps]
-    @variable(model, overdraft_indicator[1:S],Bin)
-    for s in 1:S 
-        @constraint(model, !overdraft_indicator[s]=>{sum(q[s,:,1:(M-1)])<=caps[s]})
-    end 
-    set_objective_sense(model, MOI.FEASIBILITY_SENSE)
-    @objective(model, Min,sum(overdraft_indicator))
-    optimize!(model)
-    oi=JuMP.value.(overdraft_indicator)
-    @constraint(model,sum(overdraft_indicator)==sum(oi))
-end 
-
-
-function minimize_robots!(model) 
-    shots=model[:shots]
-    S,D,M=size(shots)
-    R=M-1
-    @variable(model, robot_indicator[1:S,1:R],Bin)
-    for r in 1:R 
-        for s in 1:S
-            @constraint(model,!robot_indicator[s,r]=> {sum(shots[s,:,r]) == 0})
-        end 
-    end 
-    set_objective_sense(model, MOI.FEASIBILITY_SENSE)
-    @objective(model, Min,sum(robot_indicator))
-    optimize!(model)
-    ri=JuMP.value.(robot_indicator)
-    @constraint(model,sum(robot_indicator)==sum(ri))
-end 
-    
-
-function enforce_maxShots!(model)
-    S,D=size(model[:q])
-    q=model[:q]
-    for s in 1:S
-        @constraint(model,q[s,:,:] .<= model[:maxShots][s,:])
-    end 
-    optimize!(model) 
-end
-
-function minimize_overshots!(model)
-    shots=model[:shots]
-    S,D,M=size(shots)
-    maxShots=model[:maxShots]
-    R=M-1
-    @variable(model,overshot_indicator[1:S,1:D,1:R],Bin)
-    for s in 1:S
-        for d in 1:D
-            for r in 1:R
-                @constraint(model,!overshot_indicator[s,d,r] => {q[s,d,r]<=maxShots[s,r]})
-            end
-        end 
-    end 
-    set_objective_sense(model, MOI.FEASIBILITY_SENSE)
-    @objective(model, Min,sum(overshot_indicator))
-    optimize!(model) 
-    oi=JuMP.value.(overshot_indicator)
-    @constraint(model,sum(overshot_indicator)==sum(oi))
-end
-
-function minimize_labware_crossover!(model)
-    SL,DL=size(model[:lw])
-    lw=model[:lw]
-    @variable(model,crossover_indicator[1:SL,1:DL],Bin) # Define an indicator for whether a source s is active
-    for sl in 1:SL
-        for dl in 1:DL
-            @constraint(model, !crossover_indicator[sl,dl]=>{lw[sl,dl] == 0}) # turn the indicator on if there is a nonzero transfer from source s to any destination
-        end
-    end 
-    set_objective_sense(model, MOI.FEASIBILITY_SENSE)
-    @objective(model, Min,sum(crossover_indicator))
-    optimize!(model)
-    li=JuMP.value.(crossover_indicator)
-    @constraint(model,sum(crossover_indicator)==sum(li))
-end 
-
 
 
 
