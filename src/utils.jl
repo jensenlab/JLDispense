@@ -29,3 +29,12 @@ end
 function is_compatible_destination(culture::JLIMS.Culture,robot::Robot)
     return is_compatible_destination(culture.media,robot)
 end 
+
+
+function cartesian(x::AbstractArray,i)
+    return Tuple(CartesianIndices(x)[i])
+end 
+
+function linear(x::AbstractArray,idxs...)
+    return LinearIndeices(x)[idxs...]
+end 

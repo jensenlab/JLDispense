@@ -1,34 +1,38 @@
-struct Instrument 
-
-    deck::Deck
-    head::Head 
-end 
 
 
 
 
 
-struct DeckPosition 
-    name::AbstractString
-    slots::Tuple{Integer,Integer}
-    compatible_containers::Set{Type{<:JLIMS.Labware}}
-end 
-
-
-Deck = AbstractArray{DeckPosition}
 
 abstract type Head end 
 
-abstract type TransferHead <:Head
+abstract type TransferHead <: Head end 
 
-mask_shape(::TransferHead,::JLIMS.Labware)=() 
+abstract type FixedTransferHead <: TransferHead end 
+
+abstract type AdjustableTransferHead <: TransferHead end 
+
+nozzles(x::TransferHead)=x.nozzles
+
+
+abstract type ReadHead <: Head end 
+
+abstract type MovementHead <: Head end 
 
 
 
 
+abstract type Tool end 
+
+abstract type TransferTool <: Tool end 
+
+abstract type MovementTool <: Tool end 
+
+abstract type ReadTool <: Tool end 
 
 
-struct Nozzle
+
+struct Nozzle <: TransferTool
     minVol::Unitful.Volume
     maxVol::Unitful.Volume
     maxAsp::Unitful.Volume 
@@ -40,12 +44,21 @@ end
 
 
 
+
+abstract type DeckPosition end 
  
+struct TransferPosition <: DeckPosition 
+    can_aspirate::Bool
+    can_dispense::Bool
+    slots::Tuple{Integer,Integer}
+    compatible_labware::Set{Type{<:Labware}}
+end 
 
+Deck = AbstractArray{<:DeckPosition}
 
-function mask(::TransferHead,::JLIMS.Labware,::Integer,::Integer) = [()]
-
-
-
-
+struct Instrument{H<:Head} 
+    head::H
+    deck::Deck
+end 
+    
 
