@@ -1,81 +1,182 @@
 
-struct MantisProperties <: RobotProperties 
-    isdiscrete::Bool
+
+
+
+
+
+#=
+struct Nozzle
     minVol::Unitful.Volume
     maxVol::Unitful.Volume
-    positions::Vector{DeckPosition}
-    compatible_stocks::Vector{DataType}
-end 
-  
-  mutable struct MantisConfiguration <: RobotConfiguration
-    type::AbstractString #tube or pipette tip
-    enable_pause::Bool
-    prime_vol::Unitful.Volume
-    predispense_vol::Unitful.Volume
-    revovery_vol::Unitful.Volume
-  end
-  
-  struct Mantis <:Robot
-    name::AbstractString 
-    properties::MantisProperties 
-    configuration::MantisConfiguration
-  
-  end
-  
-  const mantis_names=Dict{JLIMS.Container,String}(
-  wp96=>"PT3-96-Assay.pd.txt",
-  wp384=>"PT9-384-Assay.pd.txt")
+    maxAsp::Unitful.Volume 
+    deadVol::Unitful.Volume 
+    deadVolFactor::Real 
+    is_discrete::Bool
+    multidispense::Bool
+end=#
+const mantis_lv_nozzle = DiscreteNozzle(0.1u"µL",10u"µL",1.1)
+const mantis_hv_nozzle = DiscreteNozzle(1u"µL",25u"µL",1.1)
 
-  
-  const default_mantis_hv=DeckPosition("High Volume",true,false,1,missing)
-  const default_mantis_lc3=DeckPosition("LC3",true,false,1,missing)
-  const default_mantis_destination=DeckPosition("Destination",false,true,1,[wp96,wp384])
-  
-  mantis_default = Mantis("Default Mantis",
-  MantisProperties(true,0.1u"µL",100u"mL",vcat([default_mantis_hv for _ in 1:4],[default_mantis_lc3 for _ in 1:24],[default_mantis_destination]),[JLIMS.LiquidStock]),
-  MantisConfiguration("pipette_tip",false,6u"µL",0.5u"µL",6u"µL")
-  )
-#vcat([default_mantis_hv for _ in 1:4],[default_mantis_lc3 for _ in 1:24]),
+abstract type MantisHead <: TransferHead end 
+
+struct MantisLVHead <: MantisHead 
+    nozzles::Nozzle
+    MantisLVHead() = new(mantis_lv_nozzle)
+end 
+
+struct MantisHVHead <: MantisHead 
+    nozzles::Nozzle
+    MantisHVHead() =new(mantis_hv_nozzle)
+end 
+
+struct MantisSettings <:InstrumentSettings
+    MantisSettings() = new()
+end 
+abstract type MantisDeckPosition <: DeckPosition 
+struct MantisLC3Position <: MantisDeckPosition
+    labware::Set{Type{<:Labware}}
+    MantisLC3Position()=new(Set([JLConstants.TipReservior,JLConstants.Conical15]))
+end 
+
+struct MantisHVPosition <: MantisDeckPosition
+    labware::Set{Type{<:Labware}}
+    MantisHVPosition()=new(Set([JLConstants.Conical]))
+end 
+
+struct MantisMainPosition <: MantisDeckPosition
+    labware::Set{Type{<:Labware}}
+    MantisMainPosition()=new(Set([JLConstants.MicroPlate,JLConstants.BreakawayPCRPlate]))
+end  
+
+
+
+
+const mantis_deck = vcat(fill(MantisLC3Position(),24),fill(MantisHVPosition(),4),MantisMainPosition())
+
+
+MantisConfiguration = Configuration{MantisHead,Deck,MantisSettings}
+
+const mantis_lv = MantisConfiguration(MantisLVHead(),mantis_deck,MantisSettings())
+const mantis_hv = MantisConfiguration(MantisHVHead(),mantis_deck,MantisSettings())
+
+### define deck access functions 
+
+
+function can_aspirate(h::MantisHead, d::MantisDeckPosition,l::Labware) 
+    return false 
+end 
+function can_dispense(h::MantisHead,d::MantisDeckPosition,l::Labware)
+    return false
+end 
+function can_dispense(h::MantisHead, d::MantisMainPosition,l::Labware) 
+    return can_place(l,d)
+end 
+
+function can_aspirate(h::MantisLVHead, d::MantisLC3Position,l::Labware) 
+    return can_place(l,d)
+end 
+function can_aspirate(h::MantisHVHead,d::MantisHVPosition,l::Labware)
+    return can_place(l,d)
+end
+function can_move(h::MantisHead,d::DeckPosition,l::Labware)
+  return false 
+end
+function can_read(h::CobraHead,d::DeckPosition,l::Labware)
+  return false
+end 
+
+
+
+function masks(h::MantisHead,l::JLConstants.WellPlate) # for generic 96 well plates, we will define a separate method for 384 well plates 
+    C= 1
+    Wi,Wj=shape(l)
+    Pi,Pj = Wi,Wj
+    W = falses(Wi,Wj)
+    P=falses(Pi,Pj)
+    function Ma(w::Integer,p::Integer,c::Integer) # Mantis cannot aspirate from well plates 
+        return false
+    end 
+    function Md(w::Integer,p::Integer,c::Integer) 
+        # w=wells, p=positions, c=channels
+        1 <= w <= Wi*Wj || return false 
+        1 <= p <= Pi*Pj || return false 
+        1 <= c <= C || return false 
+        wi,wj=cartesian(W,w)
+        pm,pn=cartesian(P,p)
+        return wi == pm && wj == pn 
+    end 
+    return Ma,Md
+end 
+
+function masks(h::MantisLVHead,l::Union{JLConstants.Conical15,JLConstants.TipReservior}) # for generic 96 well plates, we will define a separate method for 384 well plates 
+    C= 1
+    Wi,Wj=shape(l)
+    Pi,Pj = 1,1
+    W = falses(Wi,Wj)
+    P=falses(Pi,Pj)
+    function Ma(w::Integer,p::Integer,c::Integer) # Mantis cannot aspirate from well plates 
+        # w=wells, p=positions, c=channels
+        1 <= w <= Wi*Wj || return false 
+        1 <= p <= Pi*Pj || return false 
+        1 <= c <= C || return false 
+        wi,wj=cartesian(W,w)
+        pm,pn=cartesian(P,p)
+        return wi == pm && wj == pn 
+    end 
+    function Md(w::Integer,p::Integer,c::Integer) 
+        return false 
+    end 
+    return Ma,Md
+end 
+
+function masks(h::MantisHVHead,l::JLConstants.Conical50) # for generic 96 well plates, we will define a separate method for 384 well plates 
+    C= 1
+    Wi,Wj=shape(l)
+    Pi,Pj = 1,1
+    W = falses(Wi,Wj)
+    P=falses(Pi,Pj)
+    function Ma(w::Integer,p::Integer,c::Integer) # Mantis cannot aspirate from well plates 
+        # w=wells, p=positions, c=channels
+        1 <= w <= Wi*Wj || return false 
+        1 <= p <= Pi*Pj || return false 
+        1 <= c <= C || return false 
+        wi,wj=cartesian(W,w)
+        pm,pn=cartesian(P,p)
+        return wi == pm && wj == pn 
+    end 
+    function Md(w::Integer,p::Integer,c::Integer) 
+        return false 
+    end 
+    return Ma,Md
+end 
+
+
 
 
 """
-    mantis(directory::AbstractString,protocol_name::AbstractString,design::DataFrame,sources::Vector{T},destinations::Vector{U},robot::Mantis) where {T <: JLIMS.Stock,U <:JLIMS.Stock}
+    dispense(config::MantisConfiguration, design::DataFrame,directory::AbstractString,protocol_name::AbstractString,destination::Labware)
 
 Create Mantis dipsense instructions for SBS plate dispensing
 
-  ## Arguments 
-  * `directory`: output file directory
-  * `protocol_name`: protocol name  
-  * `design`: a (# of sources) x (# of destinations) dataframe containing the volume of each transfer in µL.
-  * `sources`: the source stocks
-  * `destinations`: the destination stocks 
+## Arguments 
+* `config`: A Configuration object defining the Mantis
+* `design`: a (# of sources) x (# of destinations) dataframe containing the volume of each transfer in µL.
+* `directory`: output file directory
+* `protocol_name`: protocol name  
+* `destinations`: A JLIMS.Labware destination object  
 """
-function mantis(directory::AbstractString,protocol_name::AbstractString,design::DataFrame,sources::Vector{T},destinations::Vector{U},robot::Mantis) where {T <: JLIMS.Stock,U <:JLIMS.Stock}
-        s_slots=sum(map(x->x.slots,filter(x->x.is_source,robot.properties.positions)))
-        s_labware=unique(map(x->x.well.labwareid,sources))
-        s_slots >= length(s_labware) ? nothing : error("Number of source labware ($(length(s_labware))) exceeds capacity for $(robot.name) ($s_slots)") 
-
-        allequal(map(x->x.well.labwareid,destinations)) ? nothing : error("All destination stocks must be on the same labware")
-
-        dest=unique(map(x->x.well.container,destinations))[1]
-        R,C=dest.shape
-        source_names=map(x->"WellID $(x.well.id)",sources)
-        dispenses=DataFrame(zeros(R*C,length(sources)),source_names)
-
-        for d in eachindex(destinations) 
-          idx=destinations[d].well.wellindex
-          dispenses[idx,:] .= ustrip.(uconvert.((u"µL",),design[:,d]))
-        end 
+function dispense(config::MantisConfiguration, design::DataFrame,directory::AbstractString,protocol_name::AbstractString,destination::Labware)
+        R,C=destination.shape
+        source_names=names(design)
         full_dir=joinpath(directory,protocol_name)
         if ~isdir(full_dir)
             mkdir(full_dir)
         end 
-        dispenses=dispenses[:,findall(x->sum(dispenses[:,x]) > 0,names(dispenses))]
         filename=joinpath(full_dir,protocol_name*".dl.txt")
         n_stocks=ncol(dispenses)
         delay_header=vcat(n_stocks,repeat([0,""],n_stocks))
         outfile=open(filename,"w")
-        platefilename=mantis_names[dest]
+        platefilename=mantis_names[typeof(destination)]
         print(outfile,join(["[ Version: 5 ]"],'\t'),"\r\n")
         print(outfile,platefilename,"\r\n")
         print(outfile,join(delay_header,'\t'),"\r\n")
@@ -83,9 +184,9 @@ function mantis(directory::AbstractString,protocol_name::AbstractString,design::
         print(outfile,join(delay_header,'\t'),"\r\n")
 
         for i in 1:n_stocks 
-            vols=Vector(dispenses[:,i])
+            vols=ustrip.(uconvert((u"µL",),design[:,i]))
             vols=round.(reshape(vols,R,C),digits=1)
-            print(outfile,join([names(dispenses)[i],"","Normal"],'\t'),"\r\n")
+            print(outfile,join([names(design)[i],"","Normal"],'\t'),"\r\n")
             print(outfile,join(["Well",1],'\t'),"\r\n")
             for r in 1:R
                 print(outfile,join(vols[r,:],'\t'),"\r\n")
@@ -93,30 +194,28 @@ function mantis(directory::AbstractString,protocol_name::AbstractString,design::
         end 
         close(outfile)
         write(joinpath(full_dir,"config.json"),JSON.json(robot))
-        return make_transfer_table(sources,destinations,design)
+        return nothing 
 end 
 
 
-function mixer(directory::AbstractString,sources::Vector{T},destinations::Vector{U},robot::Mantis,kwargs...) where {T <: JLIMS.Stock,U <:JLIMS.Stock}
+"""
+    dispense(config::MantisConfiguration, design::DataFrame,directory::AbstractString,protocol_name::AbstractString,destination::Type{<:Labware})
 
-  design=dispense_solver(sources,destinations,robot,minimize_overdrafts!,minimize_sources!,minimize_transfers!;pad=1.1,kwargs...)
+Create Mantis dipsense instructions for SBS plate dispensing
 
-  srcs_needed=filter(x->ustrip(sum(design[x,:])) > 0,eachindex(sources))
-
-  srcs=sources[srcs_needed]
-
-  des=design[srcs_needed,:]
-  all_labware=unique(map(x->x.well.labwareid,destinations))
-  dest_idxs=[findall(x->x.well.labwareid==i,destinations) for i in all_labware]
-  tt=DataFrame[]
-  pn=AbstractString[]
-  for i in eachindex(all_labware)
-    protocol_name=random_protocol_name()
-    push!(tt,mantis(directory,protocol_name,des[:,dest_idxs[i]],srcs,destinations[dest_idxs[i]],robot))
-    push!(pn,protocol_name)
-  end 
-  return pn,tt
+## Arguments 
+* `config`: A Configuration object defining the Mantis
+* `design`: a (# of sources) x (# of destinations) dataframe containing the volume of each transfer in µL.
+* `directory`: output file directory
+* `protocol_name`: protocol name  
+* `destinations`: A JLIMS.Labware destination subtype  
+"""
+function dispense(config::MantisConfiguration,design::DataFrame, directory::AbstractString,protocol_name::AbstractString,destination::Type{<:Labware})
+    dest=destination(1,"example_instance")
+    return dispense(config,desing,directory,protocol_name,dest)
 end 
+
+
 
 #=
 using JLDispense,JLD2

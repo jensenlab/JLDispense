@@ -114,26 +114,7 @@ end
 
 
 
-function transfer_table(sources::Vector{<:JLIMS.Well},destinations::Vector{<:JLIMS.Well},design::DataFrame)
-    transfer_table=DataFrame(Source=Integer[],Destination=Integer[],Quantity=Real[],Unit=AbstractString[])
-    r=nrow(design)
-    c=ncol(design)
-    for col in 1:c
-        for row in 1:r 
-            val=design[row,col]
-            quantity=ustrip(val)
-            if quantity==0 
-                continue 
-            else 
-                source=JLIMS.location_id(sources[row])
-                destination=JLIMS.location_id(destinations[col])
-                un=string(unit(val))
-                push!(transfer_table,(source,destination,quantity,un))
-            end 
-        end 
-    end 
-    return transfer_table
-end 
+
 
 
 

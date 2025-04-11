@@ -1,4 +1,98 @@
 
+
+#=
+struct Nozzle
+    minVol::Unitful.Volume
+    maxVol::Unitful.Volume
+    maxAsp::Unitful.Volume 
+    deadVol::Unitful.Volume 
+    deadVolFactor::Real 
+    is_discrete::Bool
+    multidispense::Bool
+end=#
+
+const nimbus_nozzle= ContinuousNozzle(50u"µL",1000u"µL",1000u"µL",25u"µL",1,false,false)
+
+
+abstract type NimbusHead <: TransferHead end 
+
+struct NimbusSingleChannelHead <: NimbusHead 
+    nozzles::Nozzle
+    NimbusSingleChannelHead()=new(nimbus_nozzle)
+end 
+
+abstract type NimbusDeckPosition <: DeckPosition end 
+
+struct NimbusDeckPosition <: DeckPosition
+    name::String
+    labware::Set{Type{<:Labware}}
+    slots::Tuple{Int,Int} 
+end
+
+# Define our available racks
+#15 mL tube
+tuberack15mL_0001=NimbusDeckPosition("TubeRack15ML_0001",Set([JLConstants.Conical15]),(4,6))
+# 50 mL tube
+tuberack50mL_0001=NimbusDeckPosition("TubeRack50ML_0001",Set([JLConstants.Conical50]),(2,3))
+tuberack50mL_0002=NimbusDeckPosition("TubeRack50ML_0002",Set([JLConstants.Conical50]),(2,3))
+tuberack50mL_0003=NimbusDeckPosition("TubeRack50ML_0003",Set([JLConstants.Conical50]),(2,3))
+tuberack50mL_0004=NimbusDeckPosition("TubeRack50ML_0004",Set([JLConstants.Conical50]),(2,3))
+tuberack50mL_0005=NimbusDeckPosition("TubeRack50ML_0005",Set([JLConstants.Conical50]),(2,3))
+tuberack50mL_0006=NimbusDeckPosition("TubeRack50ML_0006",Set([JLConstants.Conical50]),(2,3))
+
+# 2 mL deep well plate
+Cos_96_DW_2mL_0001=NimbusDeckPosition("Cos_96_DW_2mL_0001",Set([JLConstants.DeepWP96]),(1,1))
+Cos_96_DW_2mL_0002=NimbusDeckPosition("Cos_96_DW_2mL_0002",Set([JLConstants.DeepWP96]),(1,1))
+
+nimbus_deck = Deck[tuberack15mL_0001,tuberack50mL_0002,tuberack50mL_0003,tuberack50mL_0004,tuberack50mL_0005,tuberack50mL_0006,Cos_96_DW_2mL_0001,Cos_96_DW_2mL_0002]
+
+struct NimbusSettings <: InstrumentSettings 
+    max_tip_use::Integer
+end 
+
+NimbusConfiguration = Configuration{NimbusHead,Deck,NimbusSettings}
+
+const nimbus = NimbusConfiguration(NimbusSingleChannelHead(),nimbus_deck,NimbusSettings(25))
+
+function can_aspirate(h::NimbusHead, d::NimbusDeckPosition,l::Labware) 
+    return can_place(l,d)
+  end
+  function can_dispense(h::NimbusHead,d::NimbusDeckPosition,l::Labware) 
+    return can_place(l,d)
+  end
+  
+
+
+function masks(h::NimbusSingleChannelHead,l::Labware)
+    C= 1
+    Wi,Wj=shape(l)
+    Pi,Pj = 1,1
+    W = falses(Wi,Wj)
+    P=falses(Pi,Pj)
+    function Ma(w::Integer,p::Integer,c::Integer) 
+        # w=wells, p=positions, c=channels
+        1 <= w <= Wi*Wj || return false 
+        1 <= p <= Pi*Pj || return false 
+        1 <= c <= C || return false 
+        wi,wj=cartesian(W,w)
+        pm,pn=cartesian(P,p)
+        return wi == pm && wj == pn 
+    end 
+    Md=Ma 
+    return Ma,Md
+end 
+
+
+function masks(h::NimbusSingleChannelHead,l::JLConstants.WP384)
+    function Ma(w::Integer,p::Integer,c::Integer) # Nimbus cannot access 384 well plates
+        return false
+    end 
+    Md=Ma
+    return Ma,Md 
+end 
+
+
+
 struct NimbusProperties <: RobotProperties 
     isdiscrete::Bool
     minVol::Unitful.Volume
@@ -27,35 +121,7 @@ struct NimbusProperties <: RobotProperties
 
 
 
-# Define our available racks
-#15 mL tube
-TubeRack15ML_0001=DeckPosition("TubeRack15ML_0001",true,true,24,[conical_15])
-# 50 mL tube
-TubeRack50ML_0001=DeckPosition("TubeRack50ML_0001",true,true,6,[conical_50])
-TubeRack50ML_0002=DeckPosition("TubeRack50ML_0002",true,true,6,[conical_50])
-TubeRack50ML_0003=DeckPosition("TubeRack50ML_0003",true,true,6,[conical_50])
-TubeRack50ML_0004=DeckPosition("TubeRack50ML_0004",true,true,6,[conical_50])
-TubeRack50ML_0005=DeckPosition("TubeRack50ML_0005",true,true,6,[conical_50])
-TubeRack50ML_0006=DeckPosition("TubeRack50ML_0006",true,true,6,[conical_50])
-# 2 mL deep well plate
-Cos_96_DW_2mL_0001=DeckPosition("Cos_96_DW_2mL_0001",true,true,1,[dwp96_2ml,wp96])
-Cos_96_DW_2mL_0002=DeckPosition("Cos_96_DW_2mL_0002",true,true,1,[dwp96_2ml,wp96])
 
-
-default_nimbus_config=[
-    TubeRack50ML_0001,
-    TubeRack50ML_0002,
-     TubeRack50ML_0003,
-     TubeRack50ML_0004,
-     TubeRack50ML_0005,
-     TubeRack50ML_0006,
-    Cos_96_DW_2mL_0001
-]
-
-nimbus_default=Nimbus("Nimbus Default",
-NimbusProperties(false,50u"µL",1u"mL",1000u"µL",default_nimbus_config,[JLIMS.LiquidStock]),
-NimbusConfiguration(25,"default")
-)
 
 function rack_codes(n) 
     codes=["" for _ in 1:n]
@@ -113,40 +179,49 @@ function visualize_rack(name::AbstractString,setup::Vector{AbstractString})
 
 end 
 
-function convert_nimbus_design(design::DataFrame,sources::Vector{T},destinations::Vector{U},source_deck::DeckPosition,destination_deck::DeckPosition,robot::Nimbus) where {T <: JLIMS.Stock,U <:JLIMS.Stock}
+function convert_nimbus_design(design::DataFrame,source::Labware,destination::Labware,src_position::Integer,dst_position::Integer,source_deck::NimbusDeckPosition,destination_deck::NimbusDeckPosition,config::NimbusConfiguration) 
 
 
-    if !in(source_deck,robot.properties.positions) || !in(destination_deck,robot.properties.positions)
-        ArgumentError("Provide a valid Source Rack and Destination Rack Code")
+    if !in(source_deck,deck(config)) 
+        ArgumentError("Provide a valid Source deck position for the Nimbus")
     end 
 
-    if ncol(design) != length(destinations)
+    if !in(destination_deck,deck(config)) 
+        ArgumentError("Provide a valid destination deck position for the Nimbus")
+    end 
+    if nrow(design) != prod(shape(destination))
         ArgumentError("Number of columns in design must match the size of the destination")
     end 
 
-
-    if nrow(design) != length(sources)
+    if ncol(design) != prod(shape(source))
         ArgumentError("Number of rows in design must match the size of the source")
     end 
 
     source_id=String[]
-    source_position=Int64[]
+    source_position=Union{String,Integer}[]
     volume=Unitful.Volume[]
     destination_id=String[]
-    destination_position=String[]
+    destination_position=Union{String,Integer}[]
     alphabet=collect('A':'Z')
-    R,C=destinations[1].well.container.shape
-    for row in 1:nrow(design)
-        for col in 1:ncol(design)
+    for row in 1:nrow(design) #destinations
+        for col in 1:ncol(design) #sources
             push!(source_id,source_deck.name)
-            push!(source_position,row)
+            if prod(shape(source)) ==1 
+                push!(source_position,src_position)
+            else
+                r,c = cartesian(falses(shape(source)...),col)
+                pos=string(alphabet[r],c)
+                push!(source_position,pos)
+            end 
             push!(volume,design[row,col])
             push!(destination_id,destination_deck.name)
-
-            c=cld(col,R)
-            r=col-R*(c-1)
-            pos=string(alphabet[r],c)
-            push!(destination_position,pos)
+            if prod(shape(destination)) == 1 
+                push!(destination_position,dst_position)
+            else
+                r,c = cartesian(falses(shape(destination)...),row)
+                pos=string(alphabet[r],c)
+                push!(destination_position,pos)
+            end 
         end 
     end 
 
@@ -160,6 +235,34 @@ function convert_nimbus_design(design::DataFrame,sources::Vector{T},destinations
     return out
 end
 
+
+function nimbus_slotting_greedy(labware::Vector{<:Labware},config::NimbusConfiguration)
+
+    slotting = Dict{Labware,Tuple{NimbusDeckPosition,Int}}()
+    all_slots = Set(Tuple{NimbusDeckPosition,Int})
+
+    for position in deck(config) 
+        n_slots = prod(position.slots)
+        for i in 1:n_slots 
+            push!(all_slots,(position,i))
+        end 
+    end 
+
+    for lw in labware 
+        for s in all_slots 
+            if can_place(lw,s[1])
+                slotting[lw]= s 
+                remove!(all_slots,s)
+                break 
+            end 
+        end 
+        if !in(lw,keys(slotting))
+            error("cannot find an open slot for $lw, use differnt labware or change nimbus configuration")
+        end 
+    end 
+    return slotting
+end 
+
 """
     nimbus(dispense_list::NimbusDispenseList,filepath::String)
 
@@ -170,7 +273,7 @@ Create Hamilton Nimbus dipsense instructions
   * `filepath`: the ouput path of the dispense file in a .csv format
 
   ## Keyword Arguments
-  * `nimbus_config`: A vector of NimbusRack objects that specify the configuration of the numbus. the defual configuration is 5 50ml conical racks and a well plate rack. 
+  * `nimbus_config`: A vector of NimbusRack objects that specify the configuration of the numbus. the default configuration is 5 50ml conical racks and a well plate rack. 
 """
 function nimbus(directory::AbstractString, protocol_name::AbstractString, design::DataFrame, sources::Vector{T}, destinations::Vector{U}, robot::Nimbus;kwargs...) where {T <: JLIMS.Stock,U <:JLIMS.Stock}
     source_decks=filter(x->x.is_source,robot.properties.positions)

@@ -1,88 +1,181 @@
 using  CSV, DataFrames
 
 
-struct CobraProperties <: RobotProperties 
-  isdiscrete::Bool
-  minVol::Unitful.Volume
-  maxVol::Unitful.Volume
-  maxASP::Unitful.Volume
-  positions::Vector{DeckPosition}
-  compatible_stocks::Vector{DataType}
-  CobraProperties(isdiscrete,minVol,maxVol,maxASP,positions,compatible_stocks)=length(positions)==2 ? new(isdiscrete,minVol,maxVol,maxASP,positions,compatible_stocks) : error("Cobra must have two defined deck positions")
-end 
-
-mutable struct CobraConfiguration <: RobotConfiguration
-  source::AbstractString
-  destination::AbstractString
-  ASPRow::AbstractString
-  ASPCol::Int
-  washtime::Int # time in ms 
-  ASPVol::Vector{Real}
-  ASPPad::Real
-  ASPDistance::Real
-  path::Vector{AbstractString}
-  liquidclasses::Vector{AbstractString}
-  pause::Bool
-  predispenses::Int64
-  cobra_path::AbstractString
-end
-
-struct Cobra <:Robot
-  name::AbstractString 
-  properties::CobraProperties 
-  configuration::CobraConfiguration
-
-end
-
-
 struct SoftLinxSettings
   name::AbstractString
   n_loops::AbstractString
   cobrapath::AbstractString
 end 
 
+struct CobraProtocolSettings
+  source::AbstractString
+  destination::AbstractString
+  ASPRow::AbstractString
+  ASPCol::Int
+  ASPVol::Vector{Real}
+  path::Vector{AbstractString}
+  liquidclasses::Vector{AbstractString}
+end
 
 
-const cobra_names=Dict{JLIMS.Container,AbstractString}(
-  dwp96_2ml=>"Deep Well 2 ml",
-  dwp96_1ml=>"Deep Well - 1 ml",
-  wp96=>"96 Costar",
-  wp384=>"384 Well p/n 3575 3576")
 
-const default_cobra_deck_1=DeckPosition("Deck 1",true,true,1,[
-  dwp96_2ml,
-  dwp96_1ml,
-  wp384,
-  wp96
-])
+# define cobra configuration 
 
-const default_cobra_deck_2=DeckPosition("Deck 2",true,true,1,[
-  dwp96_2ml,
-  dwp96_1ml,
-  wp384,
-  wp96
-])
+struct CobraSettings <: InstrumentSettings 
+  pause::Bool
+  predispenses::Int64
+  cobra_path::AbstractString # path to dispense files on the machine running the cobra 
+  washtime::Int # time in ms 
+  ASPPad::Real # a multiplicataive padding factor
+  ASPDistance::Real # distance in mm
+end
 
 
-cobra_default = Cobra("Default Cobra",
-CobraProperties(false,0.3u"µL",40u"µL",750u"µL",[default_cobra_deck_1,default_cobra_deck_2],[JLIMS.LiquidStock,JLIMS.EmptyStock]),
-CobraConfiguration("N/A","N/A","A",1,8000,[0,0,0,0],1.1,1.7,["","","",""],["Water"],true,0,"C:\\Users\\Dell\\Dropbox (University of Michigan)\\JensenLab\\Cobra\\")
-)
+
+
+struct CobraHead <: TransferHead
+  nozzles::AbstractArray{Nozzle}
+end 
+
+struct CobraDeckPosition <: DeckPosition 
+  labware::Set{Type{<:Labware}}
+end 
+
+
+CobraConfiguration = Configuration{CobraHead,Deck{CobraDeckPosition},CobraSettings} 
+
+const cobra_nozzle = ContinuousNozzle(0.3u"µL",40u"µL",800u"µL",20u"µL",1.1,false,true)
+
+
+const cobra_head = CobraHead(fill(cobra_nozzle,4,1))
+
+const cobra_compat_labware= Set([JLConstants.DeepWP96,JLConstants.WP96,JLConstants.WP384])
+
+const cobra_position_1=CobraDeckPosition(cobra_compat_labware)
+const cobra_position_2=CobraDeckPosition(cobra_compat_labware)
+
+const cobra_deck = Deck[cobra_position_1,cobra_position_2]
+
+const cobra_settings= CobraSettings(true,0,"C:\\Users\\Dell\\Dropbox (University of Michigan)\\JensenLab\\Cobra\\",8000,1.1,2)
+
+const cobra =CobraConfiguration(cobra_head,cobra_deck,cobra_settings)
+
+
+liquidclass(::JLIMS.Stock) = "Water" 
+ 
+
+### define deck access functions 
+
+
+function can_aspirate(h::CobraHead, d::CobraDeckPosition,l::Labware) 
+  return can_place(l,d)
+end
+function can_dispense(h::CobraHead,d::CobraDeckPosition,l::Labware) 
+  return can_place(l,d)
+end
+
+# define masks 
+
+function masks(h::CobraHead,l::JLConstants.WellPlate) # for generic 96 well plates, we will define a separate method for 384 well plates 
+  C= length(nozzles(h))
+  Wi,Wj=shape(l)
+  Pi,Pj = 5,12
+  W = falses(Wi,Wj)
+  P=falses(Pi,Pj)
+  function Ma(w::Integer,p::Integer,c::Integer) 
+      # w=wells, p=positions, c=channels
+      1 <= w <= Wi*Wj || return false 
+      1 <= p <= Pi*Pj || return false 
+      1 <= c <= C || return false 
+      wi,wj=cartesian(W,w)
+      pm,pn=cartesian(P,p)
+      return wi == c+pm-1 && wj == pn 
+  end 
+  C= length(nozzles(h))
+  Wi,Wj=shape(l)
+  Pi,Pj = 11,12
+  W = falses(Wi,Wj)
+  P=falses(Pi,Pj)
+  function Md(w::Integer,p::Integer,c::Integer) 
+      # w=wells, p=positions, c=channels
+      1 <= w <= Wi*Wj || return false 
+      1 <= p <= Pi*Pj || return false 
+      1 <= c <= C || return false 
+      wi,wj=cartesian(W,w)
+      pm,pn=cartesian(P,p)
+      return wi == c+pm-4 && wj == pn 
+  end 
+  return Ma,Md
+end 
+
+function masks(h::CobraHead,l::JLConstants.WP384) 
+  C= length(nozzles(h))
+  Wi,Wj=shape(l)
+  Pi,Pj = 10,12
+  W = falses(Wi,Wj)
+  P=falses(Pi,Pj)
+  function Ma(w::Integer,p::Integer,c::Integer) 
+      # w=wells, p=positions, c=channels
+      1 <= w <= Wi*Wj || return false 
+      1 <= p <= Pi*Pj || return false 
+      1 <= c <= C || return false 
+      wi,wj=cartesian(W,w)
+      pm,pn=cartesian(P,p)
+      return wi == 2*(c-1)+pm && wj == pn 
+  end 
+  C= length(nozzles(h))
+  Wi,Wj=shape(l)
+  Pi,Pj = 22,12
+  W = falses(Wi,Wj)
+  P=falses(Pi,Pj)
+  function Md(w::Integer,p::Integer,c::Integer) 
+      # w=wells, p=positions, c=channels
+      1 <= w <= Wi*Wj || return false 
+      1 <= p <= Pi*Pj || return false 
+      1 <= c <= C || return false 
+      wi,wj=cartesian(W,w)
+      pm,pn=cartesian(P,p)
+      return wi == 2*(c-1)+pm-6 && wj == pn 
+  end 
+  return Ma,Md
+end 
+
+
+
+
+
+
+const cobra_names=Dict{Type{<:Labware},AbstractString}(
+  JLConstants.DeepWP96=>"Deep Well 2 ml",
+  WP96=>"96 Costar",
+  WP384=>"384 Well p/n 3575 3576")
+
+
+
+
+
+
+
+
+
+
+
+
 
 #############################################
 # Wrap AcuteML Dependency into a single function 
 #############################################
 
 
-function fill_protocol_template(settings::CobraConfiguration)
-  Source=settings.source
-  Destination=settings.destination
-  ASPRow=settings.ASPRow
-  ASPCol=settings.ASPCol
+function fill_protocol_template(settings::CobraSettings,protocol::CobraProtocolSettings)
+  Source=protocol.source
+  Destination=protocol.destination
+  ASPRow=protocol.ASPRow
+  ASPCol=protocol.ASPCol
   WashTime=settings.washtime
-  ASPVol=settings.ASPVol
-  Path=settings.path
-  LiquidClass=settings.liquidclasses
+  ASPVol=protocol.ASPVol
+  Path=protocol.path
+  LiquidClass=protocol.liquidclasses
   DispensePause=settings.pause
   PredispenseCount=settings.predispenses
   distance=settings.ASPDistance
@@ -429,16 +522,16 @@ function snake_order(r,c;channel=isodd) # generate the order of dispenses for a 
 end
 
 
-function design2protocols(directory::AbstractString,design::DataFrame,source::JLIMS.Container,destination::JLIMS.Container,robot::Cobra)
-  pad=robot.configuration.ASPPad
-  maxASP=ustrip(uconvert(u"µL",robot.properties.maxASP))
-  maxShot=ustrip(uconvert(u"µL",robot.properties.maxVol))
-  cobra_location=robot.configuration.cobra_path
+function design2protocols(directory::AbstractString,design::DataFrame,source::JLIMS.Labware,destination::JLIMS.Labware,config::CobraConfiguration)
+  pad=settings(config).ASPPad
+  maxASP=ustrip.(uconvert.(u"µL",map(x->x.maxASP,nozzles(head(config))) ))
+  maxShot=ustrip(uconvert(u"µL",map(x->x.maxVol,nozzles(head(config)))))
+  cobra_location=settings(config).cobra_path
   # Check for issues with the design
 
-    r_in,c_in=source.shape
+    r_in,c_in=shape(source)
     n_in=r_in*c_in
-    r_out,c_out=destination.shape
+    r_out,c_out=shape(destination)
     n_out=r_out*c_out
     des=Matrix(design)
     r,c=size(des)
@@ -472,9 +565,9 @@ function design2protocols(directory::AbstractString,design::DataFrame,source::JL
           disp_order=snake_order(r_out,c_out; channel= (isodd(channel) ? iseven : isodd)) # the even channels snake opposite to the odd ones ( yes i know this is confusing, I suggest you watch the cobra run)
           total_vols=sum(to_dispense[:,channel])*pad
           for idx in disp_order
-            if  total_vols < maxASP  # grab all of the rows we can complete with a single pass 
-                margin= max((maxASP - total_vols),0)
-                to_dispense[idx,channel]=min(d[idx,channel],maxShot,margin/pad)
+            if  total_vols < maxASP[channel]  # grab all of the rows we can complete with a single pass 
+                margin= max((maxASP[channel] - total_vols),0)
+                to_dispense[idx,channel]=min(d[idx,channel],maxShot[channel],margin/pad)
                 total_vols=sum(to_dispense[:,channel])*pad
             else
               break 
@@ -489,24 +582,20 @@ function design2protocols(directory::AbstractString,design::DataFrame,source::JL
         end 
         d=d.-to_dispense
 
-        cobra_name=robot.name
-        cobra_properties=robot.properties
-        
-        cobra_config=deepcopy(robot.configuration)
 
-        cobra_config.ASPRow=positions[set][1]
-        cobra_config.ASPCol=positions[set][2]
-        cobra_config.ASPVol=vec(sum(to_dispense,dims=1))*pad
-        cobra_config.liquidclasses=robot.configuration.liquidclasses[idxs]
-        cobra_config.source=cobra_names[source]
-        cobra_config.destination=cobra_names[destination]
+
+        ASPRow=positions[set][1]
+        ASPCol=positions[set][2]
+        ASPVol=vec(sum(to_dispense,dims=1))*pad
+        liquidclasses=fill("Water",4)
+        source=cobra_names[source]
+        destination=cobra_names[destination]
         protocol_name=basename(directory)
-        cobra_config.path=[cobra_location*"$(protocol_name)\\DispenseFile$(k).csv" for k in fileidxs]
-        cobra_config.cobra_path=cobra_location
-        configured_cobra=Cobra(cobra_name,cobra_properties,cobra_config)
-        push!(configs,configured_cobra)
+        path=[cobra_location*"$(protocol_name)\\DispenseFile$(k).csv" for k in fileidxs]
+        protocol_settings=CobraProtocolSettings(source,destination,ASPRow,ASPCol,ASPVol,path,liquidclasses)
+        push!(configs,config)
         #settings=CobraSettings(source,destination,positions[set][1],positions[set][2],washtime,vec(sum(to_dispense,dims=1))*pad,cobra_path,liquidclasses[idxs],dispensepause,predispensecount)
-        push!(protocols,fill_protocol_template(cobra_config))
+        push!(protocols,fill_protocol_template(protocol_settings,config))
       end  
     end 
     return protocols,configs
@@ -525,75 +614,49 @@ end
 
 
 """
-    cobra(design::DataFrame,directory::String,source::String,destination::String, liquidclasses::Vector{String} ;pad::Real=1.1,pause::Bool=true,predispensecount::Int=0,washtime::Int=5000, kwargs...)
+    dispense(config::CobraConfiguration, design::DataFrame, directory::AbstractString,protocol_name::AbstractString,source::Labware,destination::Labware)
 
-Create Cobra dipsense instructions for microplate source to destination operations
+Create Cobra dipsense instructions for well plate dispensing 
 
   ## Arguments 
+  * `config`: A Configuration object defining the cobra 
   * `design`: a (# of destinations) x (# of sources) dataframe containing the volume of each dispense in µL.
   * `directory`: the ouput directory of the files. directory will automatically be created if it doesn't already exist  
   * `source`: The source plate type. See `keys(containers)` for available options.
   * `destination`: The destination plate type. See `keys(containers)` for available options. 
   * `liquidclasses`: A vector of liquid class types. There must be a class for each reagents. Use "Water" as default. 
 
-  ## Keyword Arguments 
-  * `pad=1.1`: Pad the aspriation volume by a multiplier to ensure that the stock doesn't run out during dispense. Default is 1.1 (10%).
-  * `maxASP=800`: The maximum aspiration volume for a channel. We have 1 ml syringes, but we only allow them to aspirate up to 800 µl. 
-  * `maxShot=40`: The maximum shot volume for a dispense in µl. 
-  * `pause=true`: When true, Cobra pauses over each well during dispense; when false, it moves continuously.
-  * `washtime=8000`: The length of the wash step in milliseconds between each dispensing operation. Default is 8000 ms.
-  * `predispensecount=0`: Number of pre-dispense shots Cobra performs before dispensing 
-  *  `cobra_location="C:\\Users\\Dell\\Dropbox (University of Michigan)\\JensenLab\\Cobra\\"`: The location of the cobra's working directory on the driving machine.
+
 """
-function cobra(directory::AbstractString,protocol_name::AbstractString,design::DataFrame,sources::Vector{T},destinations::Vector{U},robot::Cobra;liquidclass="Water",kwargs...) where  {T <: JLIMS.Stock,U <:JLIMS.Stock}
-    allequal(map(x->x.well.labwareid,sources)) ? nothing : error("All source stocks must be on the same labware")
-    allequal(map(x->x.well.labwareid,destinations)) ? nothing : error("All destination stocks must be on the same labware")
-    source=sources[1].well.container
-    destination=destinations[1].well.container 
-    R,C=destination.shape
-    sR,sC=source.shape
-    lqs=["Water" for _ in 1:(sR*sC)]
-    dispenses=DataFrame(zeros(R*C,sR*sC),:auto)
-
-    for s in eachindex(sources)
-      lqs[sources[s].well.wellindex]=liquidclass
-    end 
-    robot.configuration.liquidclasses=lqs
-    for d in eachindex(destinations) 
-      for s in eachindex(sources)
-        dd=destinations[d].well.wellindex
-        ss=sources[s].well.wellindex
-        dispenses[dd,ss] = ustrip(uconvert(u"µL",design[s,d]))
-      end 
-    end 
-
+function dispense(config::CobraConfiguration, design::DataFrame, directory::AbstractString,protocol_name::AbstractString,source::Labware,destination::Labware) 
     full_dir=joinpath(directory,protocol_name)
     if ~isdir(full_dir)
       mkdir(full_dir)
     end 
-    protocols,cobra_configs=design2protocols(full_dir,dispenses,source,destination,robot)
+    protocols,cobra_configs=design2protocols(full_dir,dispenses,source,destination,config)
     protocol_names=["DispenseProtocol$(k).xml" for k in 1:length(protocols)]
     full_protocol_names=joinpath.((full_dir,),protocol_names)
     map((loc,protocol) -> write(loc,protocol),full_protocol_names,protocols)
     n_protocols=length(protocols)
-    softlinx=protocols2softlinx(n_protocols,protocol_name,robot.configuration.cobra_path)
+    softlinx=protocols2softlinx(n_protocols,protocol_name,settings(config).cobra_path)
     full_softlinx_name=joinpath(full_dir,"$(protocol_name).slvp")
     write(full_softlinx_name,softlinx)
     write(joinpath(full_dir,"config.json"),JSON.json(cobra_configs))
     #print("entire $(experiment_name) folder must be moved to Dropbox -> JensenLab -> Cobra")
     
-
+    return nothing 
     # include the wasted sources because we pad the aspiration  Well # 1 is designated for waste. 
-
-
-
-    tt=make_transfer_table(sources,destinations,design)
-    return tt
 end
 
+function dispense(config::CobraConfiguration,design::DataFrame,directory::AbstractString,protocol_name::AbstractString,source::Type{<:Labware},destination::Type{<:Labware})
+  src=source(1,"source_instance")
+  dst=destinatino(1,"destination_instance")
+  return dispense(config,design,directory,protocol_name,src,dst)
+end 
 
 
 
+#=
 function mixer(directory::AbstractString,sources::Vector{T},destinations::Vector{U},robot::Cobra;kwargs...) where  {T <: JLIMS.Stock,U <:JLIMS.Stock}
   design=dispense_solver(sources,destinations,robot,minimize_overdrafts!,minimize_transfers!;kwargs...)
 
@@ -621,7 +684,7 @@ function mixer(directory::AbstractString,sources::Vector{T},destinations::Vector
   end 
   return pn,tt
 end 
-
+=#
 
 
 

@@ -38,3 +38,25 @@ end
 function linear(x::AbstractArray,idxs...)
     return LinearIndeices(x)[idxs...]
 end 
+
+
+function transfer_table(source::Labware,destination::Labware,design::DataFrame)
+    transfer_table=DataFrame(Source=Integer[],Destination=Integer[],Quantity=Real[],Unit=AbstractString[])
+    r=nrow(design)
+    c=ncol(design)
+    for col in 1:c
+        for row in 1:r 
+            val=design[row,col]
+            quantity=ustrip(val)
+            if quantity==0 
+                continue 
+            else 
+                source=JLIMS.location_id(source[cartesian(source,row)])
+                destination=JLIMS.location_id(destination[cartesian(destination,col)])
+                un=string(unit(val))
+                push!(transfer_table,(source,destination,quantity,un))
+            end 
+        end 
+    end 
+    return transfer_table
+end 
