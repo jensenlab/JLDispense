@@ -11,7 +11,7 @@ struct Nozzle
     multidispense::Bool
 end=#
 
-const nimbus_nozzle= ContinuousNozzle(50u"µL",1000u"µL",1000u"µL",25u"µL",1,false,false)
+const nimbus_nozzle= ContinuousNozzle(50u"µL",1000u"µL",1000u"µL",25u"µL",1,false)
 
 
 abstract type NimbusHead <: TransferHead end 
@@ -21,7 +21,6 @@ struct NimbusSingleChannelHead <: NimbusHead
     NimbusSingleChannelHead()=new(nimbus_nozzle)
 end 
 
-abstract type NimbusDeckPosition <: DeckPosition end 
 
 struct NimbusDeckPosition <: DeckPosition
     name::String
@@ -41,10 +40,10 @@ tuberack50mL_0005=NimbusDeckPosition("TubeRack50ML_0005",Set([JLConstants.Conica
 tuberack50mL_0006=NimbusDeckPosition("TubeRack50ML_0006",Set([JLConstants.Conical50]),(2,3))
 
 # 2 mL deep well plate
-Cos_96_DW_2mL_0001=NimbusDeckPosition("Cos_96_DW_2mL_0001",Set([JLConstants.DeepWP96]),(1,1))
-Cos_96_DW_2mL_0002=NimbusDeckPosition("Cos_96_DW_2mL_0002",Set([JLConstants.DeepWP96]),(1,1))
+Cos_96_DW_2mL_0001=NimbusDeckPosition("Cos_96_DW_2mL_0001",Set([JLConstants.DeepWP96,JLConstants.WP96]),(1,1))
+Cos_96_DW_2mL_0002=NimbusDeckPosition("Cos_96_DW_2mL_0002",Set([JLConstants.DeepWP96,JLConstants.WP96]),(1,1))
 
-nimbus_deck = Deck[tuberack15mL_0001,tuberack50mL_0002,tuberack50mL_0003,tuberack50mL_0004,tuberack50mL_0005,tuberack50mL_0006,Cos_96_DW_2mL_0001,Cos_96_DW_2mL_0002]
+nimbus_deck = [tuberack15mL_0001,tuberack50mL_0002,tuberack50mL_0003,tuberack50mL_0004,tuberack50mL_0005,tuberack50mL_0006,Cos_96_DW_2mL_0001,Cos_96_DW_2mL_0002]
 
 struct NimbusSettings <: InstrumentSettings 
     max_tip_use::Integer
@@ -93,25 +92,6 @@ end
 
 
 
-struct NimbusProperties <: RobotProperties 
-    isdiscrete::Bool
-    minVol::Unitful.Volume
-    maxVol::Unitful.Volume
-    maxASP::Unitful.Volume
-    positions::Vector{DeckPosition}
-    compatible_stocks::Vector{DataType}
-  end 
-  
-  mutable struct NimbusConfiguration <: RobotConfiguration
-    max_tip_use::Integer
-    comment::AbstractString
-  end
-  
-  struct Nimbus <:Robot
-    name::AbstractString 
-    properties::NimbusProperties 
-    configuration::NimbusConfiguration
-  end
 
 
 
@@ -123,79 +103,18 @@ struct NimbusProperties <: RobotProperties
 
 
 
-function rack_codes(n) 
-    codes=["" for _ in 1:n]
-    alphabet=collect('A':'Z')
-    k=length(alphabet)
-    i=1
-    alphacounter=0
-    for i = 1:n
-        codes[i]=repeat(alphabet[mod(i-1,k)+1],cld(i,k))
-    end 
-    return codes 
-end 
-
-
-function circle(x,y,r)
-
-    θ=LinRange(0,2*π,500)
-    x .+ r*sin.(θ), y .+ r*cos.(θ)
-end 
-
-function visualize_rack(name::AbstractString,setup::Vector{AbstractString})
-    n=length(setup)
-    size=(1,1)
-    fontsize=14
-    wrapwidth=20
-    if n == 6 
-        size=(2,3)
-        wrapwidth=30
-
-    elseif n==24 
-        size=(4,6)
-        fontsize=10
-        wrapwidth=20
-    else
-        ArgumentError("Only 50mL and 15mL racks are supported")
-    end 
-    r,c=size
-    vals=reshape(setup,r,c)
-    plt=plot(grid=false,size=(1200,800),yflip=true,legend=false,dpi=300,xticks=1:c,yticks=(1:r,rack_codes(r)),xmirror=true,tickdirection=:none,tickfontsize=18)
-
-    for x in 1:c
-        for y in 1:r 
-            annotate!(x,y,text(TextWrap.wrap(vals[y,x],width=wrapwidth),:center,fontsize))
-            plot!(circle(x,y,0.5),color="black")
-        end 
-    end 
-
-
-    plot!(ylims=(0.5,r+0.5),xlims=(0.5,c+0.5))
-    plot!(title=name,titlefontsize=20)
-    return plt 
 
 
 
 
-end 
-
-function convert_nimbus_design(design::DataFrame,source::Labware,destination::Labware,src_position::Integer,dst_position::Integer,source_deck::NimbusDeckPosition,destination_deck::NimbusDeckPosition,config::NimbusConfiguration) 
 
 
-    if !in(source_deck,deck(config)) 
-        ArgumentError("Provide a valid Source deck position for the Nimbus")
-    end 
 
-    if !in(destination_deck,deck(config)) 
-        ArgumentError("Provide a valid destination deck position for the Nimbus")
-    end 
-    if nrow(design) != prod(shape(destination))
-        ArgumentError("Number of columns in design must match the size of the destination")
-    end 
+function convert_nimbus_design(design::DataFrame,labware::Vector{<:Labware}, slotting::SlottingDict,config::NimbusConfiguration) 
+    # helper function that converts the design and slotting scheme into operations for the nimbus 
+    
+    all(map(x-> x[1] in deck(config),values(slotting))) || ArgumentError("All deck positions in the SlottingDict must be present on the deck")
 
-    if ncol(design) != prod(shape(source))
-        ArgumentError("Number of rows in design must match the size of the source")
-    end 
 
     source_id=String[]
     source_position=Union{String,Integer}[]
@@ -203,20 +122,27 @@ function convert_nimbus_design(design::DataFrame,source::Labware,destination::La
     destination_id=String[]
     destination_position=Union{String,Integer}[]
     alphabet=collect('A':'Z')
-    for row in 1:nrow(design) #destinations
-        for col in 1:ncol(design) #sources
-            push!(source_id,source_deck.name)
-            if prod(shape(source)) ==1 
-                push!(source_position,src_position)
+    for col in 1:ncol(design) #sources
+        source = get_labware(labware,col)
+        s_id , s_pos = slotting[source]
+        for row in 1:nrow(design) #destinations
+            if design[row,col] == 0 
+                continue # skip if no volume transferred 
+            end 
+            push!(source_id,s_id.name)
+            if length(source) ==1 
+                push!(source_position,s_pos)
             else
                 r,c = cartesian(falses(shape(source)...),col)
                 pos=string(alphabet[r],c)
                 push!(source_position,pos)
             end 
             push!(volume,design[row,col])
-            push!(destination_id,destination_deck.name)
-            if prod(shape(destination)) == 1 
-                push!(destination_position,dst_position)
+            destination =get_labware(labware,row)
+            d_id,d_pos = slotting[destination]
+            push!(destination_id,d_id)
+            if length(destination) == 1 
+                push!(destination_position,d_pos)
             else
                 r,c = cartesian(falses(shape(destination)...),row)
                 pos=string(alphabet[r],c)
@@ -236,33 +162,24 @@ function convert_nimbus_design(design::DataFrame,source::Labware,destination::La
 end
 
 
-function nimbus_slotting_greedy(labware::Vector{<:Labware},config::NimbusConfiguration)
+function slottingdict2dataframe(slotting::SlottingDict)
+    labware_ids = Integer[]
+    labware_names = String[]
+    deck_position = String[]
+    slot = Union{String,Integer}[]
 
-    slotting = Dict{Labware,Tuple{NimbusDeckPosition,Int}}()
-    all_slots = Set(Tuple{NimbusDeckPosition,Int})
-
-    for position in deck(config) 
-        n_slots = prod(position.slots)
-        for i in 1:n_slots 
-            push!(all_slots,(position,i))
-        end 
+    for s in keys(slotting)
+        push!(labware_ids,location_id(s))
+        push!(labware_names,name(s))
+        push!(deck_position,slotting[s][1])
+        push!(slot,slotting[s][2])
     end 
-
-    for lw in labware 
-        for s in all_slots 
-            if can_place(lw,s[1])
-                slotting[lw]= s 
-                remove!(all_slots,s)
-                break 
-            end 
-        end 
-        if !in(lw,keys(slotting))
-            error("cannot find an open slot for $lw, use differnt labware or change nimbus configuration")
-        end 
-    end 
-    return slotting
+    
+    return DataFrame(Rack=deck_position,Position=slot,LabwareID=labware_ids,Name=labware_names)
 end 
 
+
+#=
 """
     nimbus(dispense_list::NimbusDispenseList,filepath::String)
 
@@ -275,56 +192,27 @@ Create Hamilton Nimbus dipsense instructions
   ## Keyword Arguments
   * `nimbus_config`: A vector of NimbusRack objects that specify the configuration of the numbus. the default configuration is 5 50ml conical racks and a well plate rack. 
 """
-function nimbus(directory::AbstractString, protocol_name::AbstractString, design::DataFrame, sources::Vector{T}, destinations::Vector{U}, robot::Nimbus;kwargs...) where {T <: JLIMS.Stock,U <:JLIMS.Stock}
-    source_decks=filter(x->x.is_source,robot.properties.positions)
-    s_slots=map(x->x.slots,source_decks)
-    s_labware=unique(map(x->x.well.labwareid,sources))
+function dispense(config::NimbusConfiguration,design::DataFrame, directory::AbstractString,protocol_name::AbstractString,labware::Vector{<:Labware},slotting::SlottingDict = nimbus_slotting_greedy(labware,config))
+    # input error handling 
+    W= nrow(design) 
+    lws = length.(labware) 
+    W == sum(lw) || ArgumentError("Dimension mismatch between design ($W) and number of wells in labware ($(sum(lw)))")
+    all(map(x-> x in keys(slotting),labware) || ArgumentError("All labware must be slotted"))
+    allunique(values(slotting)) || ArgumentError("Only one labware can be assigned to a given slot")
+    is_square(design) || ArgumentError("design must be a square dataframe")
 
-    S=length(s_labware)
-    sum(s_slots) >= S ? nothing : error("source labware ($S) exceed the number of available Nimbus source slots $(s_slots)")
-
-    destination_decks=filter(x->!x.is_source,robot.properties.positions)
-    d_slots=map(x->x.slots,destination_decks)
-    d_labware=unique(map(x->x.well.labwareid,destinations))
-    D=length(d_labware)
-    sum(d_slots) >= D ? nothing : error("destination labware ($D) exceed the number of available Nimbus destination slots $(d_slots)")
-    
-
-    s_idxs=[findall(x->x.well.labwareid==i,sources) for i in s_labware]
-    d_idxs=[findall(x->x.well.labwareid==i,destinations) for i in d_labware]
-    cum_s_slots=vcat(0,cumsum(s_slots))
-    cum_d_slots=vcat(0,cumsum(d_slots))
-    s_runs=findfirst(x->x>=S,cumsum(s_slots))
-    d_runs=findfirst(x->x>=D,cumsum(d_slots))
-    sl_set=[(cum_s_slots[i]+ 1):min(cum_s_slots[i+1],S) for i in 1:s_runs]
-    dl_set=[(cum_d_slots[i] + 1):min(cum_d_slots[i+1],D) for i in 1:d_runs]
-
-    source_loading=DataFrame("Rack"=>AbstractString[],"Position"=>Integer[],"LabwareID"=>AbstractString[])
-    destination_loading=DataFrame("Rack"=>AbstractString[],"Position"=>Integer[],"LabwareID"=>AbstractString[])
-
-    dispenses=DataFrame("Source Labware ID"=>AbstractString[],"Source Position ID"=>Integer[],"Volume (uL)"=>Real[],"Destination Labware ID"=>AbstractString[],"Destination Position ID"=>AbstractString[])
-    for d in 1:d_runs
-        for s in 1:s_runs 
-            ss=vcat(s_idxs[sl_set[s]]...)
-            dd=vcat(d_idxs[dl_set[d]]...)
-            df=convert_nimbus_design(design[ss,dd],sources[ss],destinations[dd],source_decks[s],destination_decks[d],robot)
-            src_load=DataFrame("Rack"=>[source_decks[s].name for _ in 1:s_slots[s]],"Position"=> collect(1:s_slots[s]),"LabwareID"=>vcat(map(x->x.well.labwareid,sources[ss]),["" for _ in 1:(s_slots[s]-length(sources[ss]))]))
-            dest_load=DataFrame("Rack"=>[destination_decks[d].name for _ in 1:d_slots[d]], "Position"=>collect(1:d_slots[d]),"LabwareID"=>vcat(unique(map(x->x.well.labwareid,destinations[dd])),["" for _ in 1:(d_slots[d]-length(unique(map(x->x.well.labwareid,destinations[dd]))))]))
-            append!(source_loading,src_load)
-            append!(destination_loading,dest_load)
-            n=nrow(df)
-            dispense_df=DataFrame([[],[],[],[],[],],names(df))
-            for i = 1:n 
-                vol=df[i,"Volume (uL)"]
-                while vol > 1e-6*u"µL" 
-                    shotvol=min(robot.properties.maxVol,vol) # maximum shot volume of 1 ml 
-                    push!(dispense_df,(df[i,"Source Labware ID"],df[i,"Source Position ID"],ustrip(uconvert(u"µL",shotvol)),df[i,"Destination Labware ID"],df[i,"Destination Position ID"]))
-                    vol-=shotvol
-                end 
-            end 
-            append!(dispenses,dispense_df)
+    df=convert_nimbus_design(design,labware,slotting,config)
+    n=nrow(df)
+    dispense_df=DataFrame([[],[],[],[],[],],names(df))
+    for i = 1:n 
+        vol=df[i,"Volume (uL)"]
+        while vol > 1e-6*u"µL" 
+            shotvol=min(nozzles(head(config)).maxVol,vol) # maximum shot volume of 1 ml 
+            push!(dispense_df,(df[i,"Source Labware ID"],df[i,"Source Position ID"],ustrip(uconvert(u"µL",shotvol)),df[i,"Destination Labware ID"],df[i,"Destination Position ID"]))
+            vol-=shotvol
         end 
     end 
+    append!(dispenses,dispense_df)
 
     n=nrow(dispenses)
     
@@ -335,7 +223,7 @@ function nimbus(directory::AbstractString, protocol_name::AbstractString, design
         end 
     end 
 
-    windowsize=robot.configuration.max_tip_use
+    windowsize=settings(config).max_tip_use
     for i in 1:n-windowsize+1   
         window=change_tip[i:i+windowsize-1]
         if sum(window)==0
@@ -352,6 +240,8 @@ function nimbus(directory::AbstractString, protocol_name::AbstractString, design
     source_loading=unique(source_loading)
     destination_loading=unique(destination_loading)
 
+    loading = slottingdict2dataframe(slotting) 
+
     src_racks=unique(source_loading[:,"Rack"])
     for rack in src_racks 
         entries=subset(source_loading, :Rack => x->x.==rack)
@@ -367,8 +257,8 @@ function nimbus(directory::AbstractString, protocol_name::AbstractString, design
     write(joinpath(full_dir,"config.json"),JSON.json(robot))
     return make_transfer_table(sources,destinations,design)
 end 
-
-
+=#
+#=
 function mixer(directory::AbstractString,sources::Vector{T},destinations::Vector{U},robot::Nimbus;kwargs...) where {T <: JLIMS.Stock,U <:JLIMS.Stock}
     design=dispense_solver(sources,destinations,robot,minimize_overdrafts!,minimize_sources!,minimize_transfers!;pad=1.25,kwargs...)
 
@@ -405,7 +295,7 @@ function mixer(directory::AbstractString,sources::Vector{T},destinations::Vector
     return pn,tt
 
 end 
-
+=#
 #= 
 using JLDispense,JLD2,JLIMS
 

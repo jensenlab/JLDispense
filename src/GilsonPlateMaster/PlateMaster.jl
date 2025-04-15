@@ -25,7 +25,7 @@ PlateMasterConfiguration = Configuration{PlateMasterHead,Deck{PlateMasterDeckPos
 
 const platemaster =PlateMasterConfiguration(PlateMasterHead(),platemaster_deck,PlateMasterSettings())
 
-function can_aspirate(h::PlateMasterlHead, d::PlateMasterDeckPosition,l::Labware) 
+function can_aspirate(h::PlateMasterHead, d::PlateMasterDeckPosition,l::Labware) 
     return can_place(l,d)
 end
   

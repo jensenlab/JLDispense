@@ -32,7 +32,7 @@ end
 struct MantisSettings <:InstrumentSettings
     MantisSettings() = new()
 end 
-abstract type MantisDeckPosition <: DeckPosition 
+abstract type MantisDeckPosition <: DeckPosition end 
 struct MantisLC3Position <: MantisDeckPosition
     labware::Set{Type{<:Labware}}
     MantisLC3Position()=new(Set([JLConstants.TipReservior,JLConstants.Conical15]))

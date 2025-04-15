@@ -44,7 +44,7 @@ end
 
 CobraConfiguration = Configuration{CobraHead,Deck{CobraDeckPosition},CobraSettings} 
 
-const cobra_nozzle = ContinuousNozzle(0.3u"µL",40u"µL",800u"µL",20u"µL",1.1,false,true)
+const cobra_nozzle = ContinuousNozzle(0.3u"µL",40u"µL",800u"µL",20u"µL",1.1,true)
 
 
 const cobra_head = CobraHead(fill(cobra_nozzle,4,1))
@@ -54,7 +54,7 @@ const cobra_compat_labware= Set([JLConstants.DeepWP96,JLConstants.WP96,JLConstan
 const cobra_position_1=CobraDeckPosition(cobra_compat_labware)
 const cobra_position_2=CobraDeckPosition(cobra_compat_labware)
 
-const cobra_deck = Deck[cobra_position_1,cobra_position_2]
+const cobra_deck = [cobra_position_1,cobra_position_2]
 
 const cobra_settings= CobraSettings(true,0,"C:\\Users\\Dell\\Dropbox (University of Michigan)\\JensenLab\\Cobra\\",8000,1.1,2)
 
@@ -451,7 +451,7 @@ end
 
 
 ########## Cobra Dispense Files ###########
-
+#=
 function cobraCSV(design::DataFrame,source::JLIMS.Container,destination::JLIMS.Container,path::String)
     
   r_in,c_in=source.shape
@@ -505,7 +505,7 @@ function fill_design(design::DataFrame,source::JLIMS.Container,destination::JLIM
   return DataFrame(y,:auto)
 end 
 
-
+=#
 function snake_order(r,c;channel=isodd) # generate the order of dispenses for a plate of any size. The cobra snakes through each plate: ie. starts in row 1 and goes across the row forward, shifts down to row 2 and goes backward across the row  etc. 
   n=r*c
   N=1:n

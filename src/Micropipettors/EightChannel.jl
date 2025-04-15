@@ -23,7 +23,7 @@ const eight_channel_labware = Set([JLConstants.WellPlate])
 
 const eight_channel_position = EightChannelDeckPosition(eight_channel_labware)
 
-const eight_channel_deck = Deck[eight_channel_position,eight_channel_position]
+const eight_channel_deck = [eight_channel_position,eight_channel_position]
 
 EightChannelConfiguration = Configuration{EightChannelHead,Deck{EightChannelDeckPosition},EightChannelSettings}
 

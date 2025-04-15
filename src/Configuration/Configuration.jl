@@ -25,7 +25,7 @@ abstract type MovementTool <: Tool end
 
 abstract type ReadTool <: Tool end 
 
-abstract type Nozzle <: TransferTool 
+abstract type Nozzle <: TransferTool end 
 
 struct ContinuousNozzle <: Nozzle 
     minVol::Unitful.Volume
@@ -49,17 +49,36 @@ abstract type DeckPosition end
 
 
 struct UnconstrainedDeckPosition <:DeckPosition 
+  name::String
 end 
 
-const single_channel_position = DeckPosition(Set([Labware]))
+struct SBSPosition <: DeckPosition 
+  name::String 
+  labware::Set{<:Type{Labware}}
+  slots::Tuple{Int,Int}
+end 
 
 
+
+
+
+
+SlottingDict = Dict{Labware,Tuple{DeckPosition,Integer}}
+
+length(x::Labware) = prod(shape(x))
 
 labware(x::DeckPosition) = x.labware
+slots(x::DeckPosition) = x.slots 
 
 
-function can_place(l::Labawre,d::DeckPosition) 
-    return any(map(x->typeof(l) <: x),labware(d))
+
+function can_place(l::Labware,d::DeckPosition) 
+    for x in collect(labware(d))
+      if typeof(l) <: x 
+        return true 
+      end 
+    end 
+    return false 
   end
 
 function can_place(l::Labware,d::UnconstrainedDeckPosition)
@@ -71,7 +90,7 @@ end
 function can_aspirate(h::Head, d::DeckPosition,l::Labware) 
     return false
   end
-  function can_dispense(h::CobraHead,d::CobraDeckPosition,l::Labware) 
+  function can_dispense(h::Head,d::DeckPosition,l::Labware) 
     return false
   end
   function can_move(h::Head,d::DeckPosition,l::Labware)
@@ -82,7 +101,7 @@ function can_aspirate(h::Head, d::DeckPosition,l::Labware)
   end 
 
 
-Deck{T} = Vector{T<:DeckPosition}
+Deck{T} = AbstractArray{T} where T<:DeckPosition
 
 abstract type InstrumentSettings end 
 
