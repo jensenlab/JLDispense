@@ -1,550 +1,364 @@
-
-
 struct MixingError <:Exception
-    msg::AbstractString
-    constraints::Vector{JuMP.ConstraintRef}
- end
-    
-struct OverdraftError <: Exception 
-    msg::AbstractString
-    balances::Dict{JLIMS.Stock,Unitful.Quantity}
-end 
-
-struct MissingIngredientError <: Exception 
-    msg::AbstractString
-    ings::Vector{AbstractString}
-end 
-
-struct InsufficientIngredientError <: Exception 
-    msg::AbstractString
-    ings::Vector{AbstractString}
-end 
-
-struct ContainerError <: Exception 
-    msg::AbstractString
-end 
-
-struct StockCompatibilityError <: Exception 
-    msg::AbstractString 
-end 
-
-
-Base.showerror(io::IO , e::MixingError) = begin 
-    println(io, e.msg) 
-    for con in e.constraints 
-        println(io,con)
-    end 
-end 
-Base.showerror(io,::IO, e::OverdraftError)= print(io,e.msg)
-Base.showerror(io,::IO, e::MissingIngredientError)= print(io,e.msg)
-Base.showerror(io,::IO, e::InsufficientIngredientError)= print(io,e.msg)
-Base.showerror(io,::IO, e::ContainerError)= print(io,e.msg)
-Base.showerror(io,::IO, e::StockCompatibilityError)= print(io,e.msg)
-
-
-
-preferred_quantity_unit(ing::JLIMS.Solid) =u"mg"
-preferred_quantit_unit(ing::JLIMS.Liquid) = u"µL"
-
-
-preferred_quantity_unit(stock::JLIMS.Stock)= u"µL"
-preferred_quantity_unit(stock::JLIMS.Mixture) =u"mg"
-
-
-const chemical_access_dict=Dict(
-    JLIMS.Solid => JLIMS.solids 
-    JLIMS.Liquid => JLIMS.liquids
-)
-
-
-""" 
-    concentration(stock::JLIMS.Stock,ingredient::JLIMS.Ingredient)
-
-Return the concentration of an ingredient in a stock using the preferred units for that ingredient and stock 
-    
-
-"""
-function concentration(stock::JLIMS.Stock,ingredient::JLIMS.Chemical) 
-    if ingredient in stock 
-        return uconvert(preferred_quantity_unit(ingredient)/preferred_quantity_unit(stock),(chemical_access_dict[typeof(ingredient)])(stock)[ingredient]/quantity(stock))
-    else
-        return 0*preferred_quantity(ingredient)/preferred_quantity(stock)
-    end 
-end 
-
-
-""" 
-    quantity(stock::JLIMS.Stock,ingredient::JLIMS.Ingredient)
-
-Return the quantity of an ingredient in a stock using the preferred units for that ingredient
-    
-
-"""
-function quantity(stock::JLIMS.Stock,ingredient::JLIMS.Chemical)
-    if ingredient in ingredients(stock.composition)
-        return uconvert(preferred_quantity(ingredient),(chemical_access_dict[typeof(ingredient)])(stock)[ingredient])
-    else
-        return 0*preferred_quantity(ingredient)
-    end 
-end 
-
-
-function ingredient_array(stocks::Vector{<:JLIMS.Stock},ingredients::Vector{<:JLIMS.Chemical};measure::Function=concentration) # can return concentration or quantity 
-    S=length(stocks)
-    out=DataFrame()
-        for i in ingredients 
-            vals=Any[]
-            for s in stocks
-                push!(vals,measure(s,i))
-            end 
-            out[:,Symbol(JLIMS.name(i))]=vals
-        end 
-
-    return out
-end 
-
+        msg::AbstractString
+        constraints::Vector{JuMP.ConstraintRef}
+     end
         
-
-
-function organism_array(stocks::Vector{<:JLIMS.Stock},orgs::Vector{JLIMS.Organism}) where T<:JLIMS.Culture
-    pairs=Iterators.product(orgs,stocks) |> collect 
-    out = Base.splat(in).(pairs)
-    return out' # output expected bo be cultures by strains instead of strains by cultures
-end  
-
-
-
-
-
-
-
-
-
-
-function dispense_solver(sources::Vector{T},destinations::Vector{U},robots::Vector{V},source_compatibility::BitMatrix,secondary_objectives...;quiet::Bool=true,timelimit::Real=10,pad::Real=1.25,slack_tolerance::Real=0,overdraft_tolerance::Real=1e-8,require_nonzero::Bool=true,return_model::Bool=false,obj_tolerance=1e-6,obj_cutoff=1e-3,inoculation_quantity::Real=2, priority::Dict{JLIMS.Chemical,UInt64}=Dict{JLIMS.Chemical,UInt64}(),kwargs...) where {T<: JLIMS.Culture,U<:JLIMS.Culture,V<:Robot}
-    # check the length of the inputs 
-    S= length(sources) 
-    D= length(destinations) 
-    R= length(robots)
-
+    struct OverdraftError <: Exception 
+        msg::AbstractString
+        balances::Dict{JLIMS.Stock,Unitful.Quantity}
+    end 
     
-    # check that the source compatibility matrix is valid  
-    a,b=size(source_compatibility)
-    (a,b) == (S,R) ? nothing : error("compatibility matrix size ($a x $b) does not agree with the stocks and robots ($(S) x $(R))")
-    src_pairs= Iterators.product(sources,robots) |> collect # iterate all pairs of sources and robots 
-    all( source_compatibility .<= Base.splat(is_compatible_source).(src_pairs)) ? nothing : throw(StockCompatibilityError("at least one source -- robot pair is incompatible"))
+    struct MissingChemicalError <: Exception 
+        msg::AbstractString
+    end 
 
-
-    # calculate destination compatibility 
-    dest_pairs= Iterators.product(destinations,robots) |> collect
-    destination_compatibility = Base.splat(is_compatible_destination).(dest_pairs) 
-    at_least_one_robot=sum(destination_compatibility,dims=2) .>= 1 
-    all(at_least_one_robot) ? nothing : error("at least one destination has no compatible robots")
-
+    struct MissingOrganismError <: Exception 
+        msg::AbstractString
+    end 
     
-    # check keyword parameters  for issues 
-    pad >= 1 ? nothing : error("padding factor must be greater than or equal to 1")
-    0 <= overdraft_tolerance ? nothing : error("overdraft tolerance must be nonnegative")
-    0 <= slack_tolerance ? nothing : error("Slack tolerance must be nonnegative")
-
-    # create an S x R matrix of the minimum and maximum shot values for each stock -- robot pair 
-    minshots = zeros(S,R)
-    maxshots = Inf * ones(S,R)
-    for s in 1:S
-        for r in 1:R 
-            robot=robots[r]
-            stock= sources[s].media  
-            minshots[s,r] = ustrip(uconvert(u"µL",hasproperty(robot.properties,:minVol) ? robot.properties.minVol : 0u"µL"))
-            maxshots[s,r]=ustrip(uconvert(u"µL",hasproperty(robot.properties,:maxVol) ? robot.properties.maxVol : Inf*u"µL"))
-            if stock isa JLIMS.SolidStock
-                minshots[s,r]=ustrip(uconvert(u"mg",hasproperty(robot.properties,:minMass) ? robot.properties.minMass : 0u"g"))
-                maxshots[s,r]=ustrip(uconvert(u"mg",hasproperty(robot.properties,:maxMass) ? robot.properties.maxMass : Inf*u"g"))
-            end 
-        end 
+    struct InsufficientIngredientError <: Exception 
+        msg::AbstractString
+        ings::Vector{AbstractString}
     end 
-            
-
-
-    # Gather all ingredients contained in the sources, destinations, and priority list 
-    source_ingredients= unique(vcat(map(x->ingredients(JLIMS.composition(x)),sources)...))
-    destination_ingredients= unique(vcat(map(x->ingredients(JLIMS.composition(x)),destinations)...))
-    all_ingredients = unique(vcat(source_ingredients,destination_ingredients,collect(keys(priority))))
-    I= length(all_ingredients)
-
-    # gather all strains contained in the sources and destinations 
-    all_strains=JLIMS.Strain[]
-    source_strains = unique(vcat(filter(y->!ismissing(y),map(x->x.strains,sources))...))
-    destination_strains = unique(vcat(filter(y->!ismissing(y),map(x->x.strains,destinations))...))
-    all_strains=push!(all_strains,source_strains...)
-    all_strains=push!(all_strains,destination_strains...)
-    Y=length(all_strains)
-    src_strain_array=strain_array(sources,all_strains)
-
-    dest_strain_array=strain_array(destinations,all_strains)
-
-    # group all available_sources by location 
-    src_labware=unique(map(x->JLIMS.well(x).locationid,sources))
-    SL=length(src_labware)
-    slw_idxs=[findall(x->JLIMS.well(x).locationid==src_labware[l],sources) for l in 1:SL ]
-
-
-    # group all destinations by location 
-    dest_labware=unique(map(x->well(x).locationid,destinations))
-    DL=length(dest_labware)
-    dlw_idxs=[findall(x->well(x).locationid==dest_labware[l],destinations) for l in 1:DL ]
-
-    # get and convert the source stock quantities for overdraft constants 
-    source_quantities = ustrip.(map(x->uconvert(preferred_quantity(x),JLIMS.quantity(x)),sources))
-
-    # Create the concentration array for the sources and the target quantity array for the destinations
-    source_concentrations=ingredient_array(sources,all_ingredients) 
-    sc = Float64.(Matrix(Unitful.ustrip.(source_concentrations)))
-
-    #create the target array for the destinations 
-    destination_quantities=ingredient_array(destinations,all_ingredients;measure=quantity)
-    dq = Float64.(Matrix(Unitful.ustrip.(destination_quantities)))
-
-
-    # check for missing source ingredients needed to complete the destination
-    missing_ingredients=filter(x-> sum(Unitful.ustrip.(source_concentrations[:,Symbol(x.name)]))==0,destination_ingredients)
-
-    if length(missing_ingredients) > 0 
-            ings=map(x->x.name,missing_ingredients)
-            throw(MissingIngredientError("No valid source of $(join(ings,", ")) available to complete the dispenses",ings))
-    end 
-
-    # Update priorities: priority increases with decreasing level
-
-    # Level 0: All level 0 ingredeients are blocked from the design. They may not appear in the stock. 
-    # Level 1+: All other ingredients are scheduled sequentially by priority. we allow slack for all nonzero priorities, where we try to minimize the slack for each ingredient and then constrain the slack for future priority levels. 
-    # Level 2^(64)-1: Maximum allowable priority level, typically a solvent like water that we would use to back fill will be assigned maximum priority level. 
-
-    for ing in destination_ingredients
-        if !in(ing,keys(priority))
-            priority[ing]=UInt64(1)
-        end 
-    end 
-    for ing in source_ingredients
-        if !in(ing,keys(priority)) # if the user hasn't specified a source ingredient priority or included it in the design (see above), assume it is priority 0. (These ingredients will be blocked, regardless of a discrete or continuous robot)
-            priority[ing]=UInt64(0) 
-        end 
-    end 
-
-    capvals=source_quantities/pad  # the maximum quantity of each source 
-
-    maxshot_param=Inf * ones(S,R+1)
-    minshot_param=zeros(S,R+1)
-    shot_density = ones(S,R+1) # assume that one shot delivers one unit of source 
-    for r in 1:R
-        if robots[r].properties.isdiscrete
-            maxshot_param[:,r].=maxshots[:,r] ./ minshots[:,r] # convert all masses and volumes to shots for the discrete problem 
-            minshot_param[:,r].=minshots[:,r] ./ minshots[:,r]
-            shot_density[:,r] .= deepcopy(minshots[:,r]) # for discrete robots, one shot delivers the minimum shot value
-        else 
-            maxshot_param[:,r] .= maxshots[:,r]
-            minshot_param[:,r].= minshots[:,r]
-        end 
-    end 
-
-    maxshot_param[:,(R+1)] .= source_quantities
-    minshot_param[:,(R+1)].= source_quantities
-
-    # initialize the JuMP model 
-    model=Model(Gurobi.Optimizer) 
-    if quiet 
-        set_silent(model)
-    end 
-    set_attribute(model,"TimeLimit",timelimit)
-    M=R+1
-    # Define constants 
-    @variable(model, minShots[1:S,1:M] in Parameter.(minshot_param))
-    @variable(model, maxShots[1:S,1:M] in Parameter.(maxshot_param))
-    @variable(model, caps[1:S] in Parameter.(capvals)) # save a parameter for the volume of each available source
-
-    # Define Model variables 
-    @variable(model, shots[1:S,1:D,1:M]>=0) # q[s,d,r] = shots of source s transfered to destination d using robot r . We add an extra 'null' robot that "transfers" contents of a single well to itself
-    @variable(model,q[1:S,1:D,1:M]>=0)
-    @variable(model,qt[1:S,1:D]>=0)
-    @variable(model, qi[1:S,1:D,1:M],Bin) #  Indicator for whether a transfer in q is active
-    @variable(model, stri[1:S,1:D],Bin) # strain transfer indicator 
-    @variable(model,slacks[1:D,1:I]) # slack variables to measure the difference between the dispenses and the target quantities for each ingredient of each destination
-    @variable(model, lw[1:SL,1:DL]>=0) # continuous variable to measure the total quantity dispensed from and to each labware 
-    @variable(model,strain_slacks[1:D,1:Y])
-    for s in 1:S
-        for d in 1:D 
-            for r in 1:M
-                @constraint(model, q[s,d,r] == shots[s,d,r]*shot_density[s,r])
-                @constraint(model, !qi[s,d,r] => {shots[s,d,r]== 0}) # tie the transfer indicator to the transfers
-            end 
-        end 
-    end 
-    for s in 1:S 
-        for d in 1:D 
-            @constraint(model,qt[s,d] == sum(q[s,d,:]))
-        end 
-    end 
-
-    for s in 1:S 
-        for d in 1:D 
-            @constraint(model, !stri[s,d] => {sum(src_strain_array[s,:])*sum(shots[s,d,:])==0})
-        end 
-    end 
-
     
-    @constraint(model, qt'*sc .- slacks .== dq ) # create the destinations with the sources, allowing for some slack. This looks messy but it is a mass/volume balance. 
-
-    @constraint(model, stri'*src_strain_array .== dest_strain_array) # ensure that only strains meant to be dispensed are dispensed 
-    @constraint(model, qt'*src_strain_array .- strain_slacks .== inoculation_quantity*dest_strain_array) # ensure that if a strain is dispensed, meaure the discrepancy with the strain slack
-
-    for r in 1:R 
-        if robots[r].properties.isdiscrete 
-        set_integer.(shots[:,:,r])  
-        @constraint(model, shots[:,:,r] .>= qi[:,:,r]) # enforce activity constraint
-        else 
-            for s in 1:S 
-                @constraint(model, shots[s,:,r] .>= minShots[s,r]*qi[s,:,r]) # if a dispense is active it must be larger than the minimum shot volume for the robot. This formulates q as a semicontinuous variable from (minshotval, Inf)
-            end 
-        end
-    end
-    @constraint(model,shots[:,:,M] .>= minShots[:,M].*qi[:,:,M])
-
-    for s in 1:S 
-        for d in 1:D 
-            if JLIMS.well(sources[s]) == JLIMS.well(destinations[d]) # if the source well is the same as the destination well, the entire quantity of the source must be transferred to the destination
-                @constraint(model,q[s,d,R+1]==source_quantities[s]) # the total quantity must be the source quantity
-                @constraint(model,shots[s,:,1:R].==0) # all dispenses on other robots must be zero for the source
-                @constraint(model,shots[s,setdiff(1:D,d),R+1].==0) # the `null` robot cannot be used for other destinations
-            else 
-                @constraint(model,shots[s,d,R+1]==0)  # the `null` robot cannot be used for the source-dispense pair
-            end 
-        end 
+    struct ContainerError <: Exception 
+        msg::AbstractString
     end 
+    
+    struct StockCompatibilityError <: Exception 
+        msg::AbstractString 
+    end 
+
+
+
+function dispense_solver(sources::Vector{Well},targets::Vector{Well},configurations::Vector{<:Configuration};quiet::Bool=true,timelimit::Real=10,pad::Real=1.25,slack_tolerance::Real=0,overdraft_tolerance::Real=1e-8,require_nonzero::Bool=true,return_model::Bool=false,obj_tolerance=1e-2,obj_cutoff=1e-3,inoculation_quantity::Real=2, priority::Dict{JLIMS.Chemical,UInt64}=Dict{JLIMS.Chemical,UInt64}(),kwargs...) 
+
+        all_labware = get_all_labware(sources,targets)
+
+        all_chemicals =get_all_chemicals(sources,targets,priority) 
+
+        all_organisms = get_all_organisms(sources,targets) 
+
+        src_stocks, tgt_stocks, s_enforced,t_enforced= slot_stocks(sources,targets)
+
+        src_quantities =ustrip.(map(x->uconvert(preferred_quantity(x),JLIMS.quantity(x)),src_stocks))
+
+        configs = vcat(configurations,null_robot) # add in the null robot to handle the "hidden" transfers that go directly from a well to itself
+        
+        # Create the concentration array for the sources and the target quantity array for the destinations
+        source_concentrations=chemical_array(src_stocks,all_ingredients) 
+        sc = Float64.(Matrix(Unitful.ustrip.(source_concentrations)))
+        so = strain_array(src_stocks,all_organisms)
+        #create the target array for the destinations 
+        target_quantities=chemical_array(destinations,all_ingredients;measure=quantity)
+        tq = Float64.(Matrix(Unitful.ustrip.(target_quantities)))
+        to = strain_array(tgt_stocks,all_organisms)
+
  
-
-    for s in 1:S
-        for d in 1:D
-            for r in 1:R
-                if !(source_compatibility[s,r] && destination_compatibility[d,r])
-                    @constraint(model, shots[s,d,r]==0) # don't allow transfers with incompatible robots
-                end
-            end 
+        # check for missing source ingredients needed to complete the destinations
+        missing_chemicals=filter(x-> sum(Unitful.ustrip.(source_concentrations[:,Symbol(x.name)]))==0,get_all_chemicals(targets))       
+        if length(missing_chemicals) > 0 
+                throw(MissingChemicalError("No valid source of $(join(name.(missing_chemicals),", ")) available to complete the dispenses",missing_chemicals))
         end 
-    end 
-    for y in 1:Y 
-        for d in 1:D
-            if dest_strain_array[d,y] == false 
-                @constraint(model, strain_slacks[d,y]==0)
-            end 
-        end 
-    end 
-    for i in 1:I
-        if priority[all_ingredients[i]] == UInt(0)
-            for d in 1:D
-                @constraint(model, slacks[d,i]==0) # priority 0 ingredients must hit the target exactly for each destination. The slack must be zero (because the delivered quantity must be zero)  
-            end 
-        end 
-    end 
 
-
-    if require_nonzero 
-        for i in 1:I
-            sources_with_ingredient=sc[:,i] .> 0 
-            for d in 1:D
-                if dq[d,i] > 0 
-                    @constraint(model,sum(qi[:,d,:] .* sources_with_ingredient) >=1) # check that at least one transfer happens if an ingredient is needed in a destination, even if the optimial solution is to not dispense anything. 
-                end 
-            end 
-        end 
-    end 
-     
-
-    for sl in 1:SL 
-        for dl in 1:DL
-            @constraint(model, lw[sl,dl]==sum(qt[slw_idxs[sl],dlw_idxs[dl]])) # constrain the labware volume to track the dispenses from each source location to each destination location 
+        # check for missing source organisms needed to create the targets 
+        missing_organisms = filter(x-> sum(so[:,Symbol(JLIMS.name(x))])==0,get_all_organsims(targets))
+        if length(missing_organisms)>0 
+                throw(MissingOrgansimError("No valid source of $(join(name.(missing_organisms),", ")) available to complete the dispenses",missing_organisms))
         end
-    end 
+
+        # update the chemical priority dict to account for the sources and targets 
+        update_priority!(sources,targets,priority)
 
 
-    set_objective_sense(model, MOI.FEASIBILITY_SENSE)
-    #target_bound=sum((inoculation_quantity*dest_strain_array).^2)
-    #set_attribute(model,"Cutoff",obj_cutoff* target_bound) # reject any solutions that are larger than the objective tolerance, which is a percentage of the sum squared target quantities.
-    #set_attribute(model, "BestObjStop",obj_tolerance*target_bound) 
-    @objective(model, Min,sum(strain_slacks.^2)) # penalize large slacks, search for q that minimize slacks.
-    optimize!(model)
-    println(termination_status(model)) 
-    current_strain_slacks=abs.(JuMP.value.(strain_slacks))
-    for y in 1:Y
-            delta=slack_tolerance * inoculation_quantity* dest_strain_array[:,y] # delta is the tolerance we give to updating the slack in higher priority levels, it is some fraction of the dispense target quantity for every destination. Wiggle room for the slack in future iterations 
-            current_strain_slack=current_strain_slacks[:,y]
-            @constraint(model, strain_slacks[:,y] .>= -current_strain_slack .- delta)
-            @constraint(model, strain_slacks[:,y] .<= current_strain_slack .+ delta)
-    end 
-    #reset the optimizer to remove the objective cutoff since we are switching objectives 
-    set_optimizer(model,Gurobi.Optimizer)
-    set_attribute(model,"TimeLimit",timelimit)
-
-
-    priority_levels= sort(unique(collect(values(priority))))
-    for level in priority_levels  # pass through all priority levels from lowest to higest level
-
-
-        weights= falses(I)
-        for i in 1:I
-            if priority[all_ingredients[i]] <= level 
-                weights[i]=true # activate the weight term for this ingredient on this pass
-            end 
+        ######
+        # start defining model 
+        ######
+        model=Model(Gurobi.Optimizer) 
+        if quiet 
+            set_silent(model)
         end 
+        set_attribute(model,"TimeLimit",timelimit)
+        W = length(src_stocks) # number of total wells in the model
+        C = length(all_chemicals)
+        O = length(all_organisms)
+        L = length(all_labware)
+        R = length(configs)
+        lw_product = Iterators.product(all_labware,all_labware) # build a pairwise product of every labware to iterate over 
+        lw_idxs = Iterators.product(1:L,1:L)
+    
+        # Define Model variables 
+        @variable(model, Qw[1:W,1:W]>=0) # q(i,j) = quantity of material transferred from well i to well j 
+        @variable(model,Qwa[1:W,1:W]>=0)
+        Q = [@variable(model, [1:length(la),1:length(ld)],lower_bound=0) for (la,ld) in lw_product]
+        Qa = [@variable(model, [1:length(la),1:length(ld)],lower_bound=0) for (la,ld) in lw_product]
+        @variable(model,chem_slacks[1:W,1:C])
+        @variable(model,org_slacks[1:W,1:O])
+        for (aa,dd) in lw_idxs
+                for (i,j) in CartesianIndices(Q[aa,dd])
+                        @constraint(model,Qw[get_well_index(all_labware,aa,i),get_well_index(all_labware,dd,j)]== Q[aa,dd][i,j] ) # tie the wells segregated by labware to the WxW variable. Having both makes it easier to work with each type when indexing
+                        @constraint(model,Qwa[get_well_index(all_labware,aa,i),get_well_index(all_labware,dd,j)]== Qa[aa,dd][i,j] ) 
+                end
+        end
+        # constraints to ensure that we create the targets properly
+        @constraint(model, Qw'*sc .- chem_slacks .== tq ) # create the targets with the sources, allowing for some slack. This is a mass/volume balance. 
+        @constraint(model, Qw'*so .- org_slacks .== inoculation_quantity*to) # ensure that if a strain is dispensed, meaure the discrepancy with the strain slack
+        @constraint(model,org_slacks .== 0 ) # organisms must be hit exactly. They trump all other priorities. 
+    
+
+
+        # measure the physical masked operations 
+        Vd = [write_masked_operation_variables(model,c,la,ld,false) for  (la,ld) in lw_product, c in configs] # stores the quantity of material moved from position 
+        Va = [write_masked_operation_variables(model,c,la,ld,true) for  (la,ld) in lw_product, c in configs]
+        e = length(configs)
+        for (aa,dd) in lw_idxs
+                for c in eachindex(configs) 
+                        cha= size(Va[aa,dd,c])[2] # aspirate channel id
+                        for ch in 1:cha
+                        @constraint(model, Va[aa,dd,c][:,ch,:,:] .>= pads(head(c))[ch]* Vd[aa,dd,c][:,ch,:,:] .+ deadvols(head(configs[c]))[ch] ) # add the appropriate padding factor and deadvolume of the aspirating channel to the aspirating volume 
+                        end 
+                end
+                for (i,j) in CartesianIndices(Q[aa,dd])
+                        if i != j 
+                                @constraint(model, sum([sum([masks(head(configs[c]),all_labware[aa])[1](i,pa,cha)*masks(head(configs[c]),all_labware[dd][2](i,pd,chd))*Vd[aa,dd,c][pa,cha,pd,chd] for (pa,cha,pd,chd) in CartesianIndices(Va[aa,dd,c])]) for c in eachindex(configs)[1:end]]) == Q[aa,dd][i,j]) # can use any of the real robots to do transfers
+                                @constraint(model, sum([masks(head(configs[e]),all_labware[aa])[1](i,pa,cha)*masks(head(configs[e]),all_labware[dd][2](i,pd,chd))*Vd[aa,dd,e][pa,cha,pd,chd] for (pa,cha,pd,chd) in CartesianIndices(Va[aa,dd,e])])  == 0) # null robot must not be used 
+                                @constraint(model, sum([sum([masks(head(configs[c]),all_labware[aa])[1](i,pa,cha)*masks(head(configs[c]),all_labware[dd][2](i,pd,chd))*Va[aa,dd,c][pa,cha,pd,chd] for (pa,cha,pd,chd) in CartesianIndices(Va[aa,dd,c])]) for c in eachindex(configs)[1:end]]) == Qa[aa,dd][i,j]) # can use any of the real robots to do transfers
+                                @constraint(model, sum([masks(head(configs[e]),all_labware[aa])[1](i,pa,cha)*masks(head(configs[e]),all_labware[dd][2](i,pd,chd))*Va[aa,dd,e][pa,cha,pd,chd] for (pa,cha,pd,chd) in CartesianIndices(Va[aa,dd,e])])  == 0) # null robot must not be used 
+                                # This expression sums over all robot configurations c in the outer loop, and then sums over all mask position pairs (pa,ca,pd,cd) (p = position ,ch= channel) for the given labware and configuration pairings. 
+                                # Ultimately, this is the constraint that converts masked operations into flows from well to well
+                                # the main calculation is to multiply the aspirate and dispense masks Ma =masks()[1] and Md masks()[2]  by the dispensed volume flow Vd. 
+                                # only flows that pass both masks count, the rest are irrelevant. 
+                        else 
+                                @constraint(model, sum([sum([masks(head(configs[c]),all_labware[aa])[1](i,pa,cha)*masks(head(configs[c]),all_labware[dd][2](i,pd,chd))*Vd[aa,dd,c][pa,cha,pd,chd] for (pa,cha,pd,chd) in CartesianIndices(Va[aa,dd,c])]) for c in eachindex(configs)[1:end-1]]) == 0) # cannot use any of the real robots to do transfers, only the null robot
+                                @constraint(model, sum([masks(head(configs[e]),all_labware[aa])[1](i,pa,cha)*masks(head(configs[e]),all_labware[dd][2](i,pd,chd))*Vd[aa,dd,e][pa,cha,pd,chd] for (pa,cha,pd,chd) in CartesianIndices(Va[aa,dd,e])])  == Q[aa,dd][i,j]) # null robot must pick up all slack 
+                                @constraint(model, sum([sum([masks(head(configs[c]),all_labware[aa])[1](i,pa,cha)*masks(head(configs[c]),all_labware[dd][2](i,pd,chd))*Va[aa,dd,c][pa,cha,pd,chd] for (pa,cha,pd,chd) in CartesianIndices(Va[aa,dd,c])]) for c in eachindex(configs)[1:end-1]]) == 0) # cannot use any of the real robots to do transfers, only the null robot
+                                @constraint(model, sum([masks(head(configs[e]),all_labware[aa])[1](i,pa,cha)*masks(head(configs[e]),all_labware[dd][2](i,pd,chd))*Va[aa,dd,e][pa,cha,pd,chd] for (pa,cha,pd,chd) in CartesianIndices(Va[aa,dd,e])])  == Qa[aa,dd][i,j]) # null robot must pick up all slack 
+                        end 
+                end 
+ 
+        end 
+
+ 
+        for c in 1:C
+                if priority[all_chemicals[c]] == UInt(0)
+                        for d in 1:W
+                                @constraint(model, chem_slacks[d,c]==0) # priority 0 ingredients must hit the target exactly for each destination. The slack must be zero (because the delivered quantity must be zero)  
+                        end 
+                end 
+        end 
+
+
+        if require_nonzero  # requiring nonzero for each needed destination well and chemical necesitates a Binary variable, which turns the problem into an MILP. 
+                @variable(model,QwI[1:W,1:W],Bin) 
+                for i in 1:W 
+                        for j in 1:W
+                                @constraint(model, !QwI[i,j] => {Q[i,j]== 0}) # tie the transfer indicator to the transfers
+                        end
+                end
+                for c in 1:C
+                sources_with_chemical=sc[:,c] .> 0 
+                for d in 1:W
+                        if tq[d,c] > 0 
+                        @constraint(model,sum( QwI[:,d] .* sources_with_chemical) >= 1  ) # check that at least one transfer happens if an ingredient is needed in a destination, even if the optimial solution is to not dispense anything.  
+                        end 
+                end 
+                end 
+        end 
+
+        ############################################################################################################################################################
+        # SET UP OBJECTIVES
+
+        ############################################################################################################################################################
+
         set_objective_sense(model, MOI.FEASIBILITY_SENSE)
-        target_bound=sum(weights'.*dq.^2)
-        set_attribute(model,"Cutoff",obj_cutoff* target_bound) # reject any solutions that are larger than the objective tolerance, which is a percentage of the sum squared target quantities.
-        set_attribute(model, "BestObjStop",obj_tolerance*target_bound) 
-        @objective(model, Min,sum(weights'.*(slacks.^2))) # penalize large slacks, search for q that minimize slacks.
+        #target_bound=sum((inoculation_quantity*dest_strain_array).^2)
+        #set_attribute(model,"Cutoff",obj_cutoff* target_bound) # reject any solutions that are larger than the objective tolerance, which is a percentage of the sum squared target quantities.
+        #set_attribute(model, "BestObjStop",obj_tolerance*target_bound) 
+        #=
+        @objective(model, Min,sum(strain_slacks.^2)) # penalize large slacks, search for q that minimize slacks.
+        optimize!(model)
+        println(termination_status(model)) 
+        current_strain_slacks=abs.(JuMP.value.(strain_slacks))
+        for y in 1:Y
+                delta=slack_tolerance * inoculation_quantity* dest_strain_array[:,y] # delta is the tolerance we give to updating the slack in higher priority levels, it is some fraction of the dispense target quantity for every destination. Wiggle room for the slack in future iterations 
+                current_strain_slack=current_strain_slacks[:,y]
+                @constraint(model, strain_slacks[:,y] .>= -current_strain_slack .- delta)
+                @constraint(model, strain_slacks[:,y] .<= current_strain_slack .+ delta)
+        end 
+        #reset the optimizer to remove the objective cutoff since we are switching objectives 
+        set_optimizer(model,Gurobi.Optimizer)
+        set_attribute(model,"TimeLimit",timelimit)
+                =# 
+        target_weights = t_enforced 
+        priority_levels= sort(unique(collect(values(priority))))
+        for level in priority_levels  # pass through all priority levels from lowest to higest level
+
+
+                chem_weights= falses(C)
+                for c in 1:C
+                        if priority[all_chemcials[c]] <= level 
+                                chem_weights[i]=true # activate the weight term for this ingredient on this pass
+                        end 
+                end 
+                weights = target_weights .* chem_weights' 
+                set_objective_sense(model, MOI.FEASIBILITY_SENSE)
+                #target_bound=sum(weights .*tq.^2) # activate only the slacks for ingredients with this priority level 
+                #set_attribute(model,"Cutoff",obj_cutoff* target_bound) # reject any solutions that are larger than the objective tolerance, which is a percentage of the sum squared target quantities.
+                #set_attribute(model, "BestObjStop",obj_tolerance*target_bound) 
+                @objective(model, Min,sum(weights .*(chem_slacks.^2))) # penalize large slacks, search for Qw that minimize slacks.
+                optimize!(model)
+
+                # Check for optimality and feasibility 
+                term = termination_status(model)
+                if term == MOI.OPTIMAL || term == MOI.OBJECTIVE_LIMIT
+                if primal_status(model)==MOI.FEASIBLE_POINT
+                        println("Optimal Solution Found For Level $level")
+                elseif primal_status(model)==MOI.NO_SOLUTION
+                        throw(error("No solution exists For Level $level"))
+                end 
+                elseif term == MOI.TIME_LIMIT
+                if primal_status(model) == MOI.FEASIBLE_POINT
+                        @warn "a solution was found for level $level, but it may be sub-optimal because the solver stopped due to reaching its $(timelimit)s  time limit."
+                else 
+                        throw(error("the solver was unable to find a feasible solution for level $level in the $(timelimit)s time limit."))
+                end 
+                elseif term == MOI.INFEASIBLE || term == MOI.INFEASIBLE_OR_UNBOUNDED
+                println("infeasible solution")
+                println(term)
+                #=
+                compute_conflict!(model)
+                out_cons=ConstraintRef[]
+                if get_attribute(model, MOI.ConflictStatus()) == MOI.CONFLICT_FOUND
+                        cons=all_constraints(model; include_variable_in_set_constraints=false)
+                        for con in cons 
+                        try get_attribute(con,MOI.ConstraintConflictStatus())
+                                if get_attribute(con,MOI.ConstraintConflictStatus()) == MOI.IN_CONFLICT
+                                push!(out_cons,con)
+                                end 
+                        catch 
+                        end 
+                        end 
+                        open("/Users/BDavid/Desktop/iis.txt","w") do file
+                        for con in out_cons
+                                println(file,con)
+                        end 
+                        end 
+                        throw(MixingError("the requested destination stocks cannot be made using this combination of sources and robot \n the following constraints are in conflict:",out_cons))
+                end 
+                =#
+                end 
+                current_slacks=abs.(JuMP.value.(chem_slacks))
+                
+                for c in 1:C
+                if chem_weights[c]
+                        delta=slack_tolerance * tq[:,c] # delta is the tolerance we give to updating the slack in higher priority levels, it is some fraction of the dispense target quantity for every destination. Wiggle room for the slack in future iterations 
+                        current_slack=current_slacks[:,c]
+                        @constraint(model, chem_slacks[:,c] .>= -current_slack .- delta)
+                        @constraint(model, chemslacks[:,c] .<= current_slack .+ delta)
+                end 
+                end 
+        
+                
+        end 
+        #reset the optimizer to remove the objective cutoff since we are switching objectives 
+        set_optimizer(model,Gurobi.Optimizer)
+        set_attribute(model,"TimeLimit",timelimit)
+        optimize!(model) # resolve one last time with the final slack constraints -> we need to optimize before querying results for the secondary objectives 
+
+        set_objective_sense(model, MOI.FEASIBILITY_SENSE)
+
+
+        @objective(model, Min,sum(sum.(Va))+sum(sum.(Vd))) # minimize total masked operations 
         optimize!(model)
 
-        # Check for optimality and feasibility 
-        term = termination_status(model)
-        if term == MOI.OPTIMAL || term == MOI.OBJECTIVE_LIMIT
-            if primal_status(model)==MOI.FEASIBLE_POINT
-                println("Optimal Solution Found For Level $level")
-            elseif primal_status(model)==MOI.NO_SOLUTION
-                throw(error("No solution exists that is better than the set objective cutoff $(obj_cutoff*100)%."))
-            end 
-        elseif term == MOI.TIME_LIMIT
-            if primal_status(model) == MOI.FEASIBLE_POINT
-                @warn "a solution was found for level $level, but it may be sub-optimal because the solver stopped due to reaching its $(timelimit)s  time limit."
-            else 
-                throw(error("the solver was unable to find a feasible solution for level $level in the $(timelimit)s time limit."))
-            end 
-        elseif term == MOI.INFEASIBLE || term == MOI.INFEASIBLE_OR_UNBOUNDED
-            println("infeasible solution")
-            println(term)
-            compute_conflict!(model)
-            out_cons=ConstraintRef[]
-            if get_attribute(model, MOI.ConflictStatus()) == MOI.CONFLICT_FOUND
-                cons=all_constraints(model; include_variable_in_set_constraints=false)
-                for con in cons 
-                    try get_attribute(con,MOI.ConstraintConflictStatus())
-                        if get_attribute(con,MOI.ConstraintConflictStatus()) == MOI.IN_CONFLICT
-                            push!(out_cons,con)
-                        end 
-                    catch 
-                    end 
+        # check for overdrafts 
+        qa_quants = JuMP.value.(Qwa)
+        quants_needed=sum(Qwa,dims=2) # the total quantity of each source across all robots and destinations.
+
+        quants_needed=quants_needs .* s_enforced * u"µL"
+
+        overdrafts = quants_needed .- map(x->uconvert(preferred_quantity_unit(x),quantity(x),stock.(sources)))
+        if any(overdrafts .>overdraft_tolerance) 
+                overdraft_dict=Dict{JLIMS.Well,Unitful.Quantity}()
+                for i in findall(x-> x > 0 ,overdrafts)
+                        od=overdrafts[i]
+                        overdraft_dict[sources[i]] = od 
                 end 
-                open("/Users/BDavid/Desktop/iis.txt","w") do file
-                    for con in out_cons
-                        println(file,con)
-                    end 
+                throw(OverdraftError("Refills are needed for $(length(collect(keys(overdraft_dict)))) sources:",overdraft_dict))
+        end 
+
+
+        # check for solution optimality 
+
+        c_slacks =JuMP.value.(chem_slacks)
+        sol_quality=zeros(size(c_slacks))
+        for (d,c) in CartesianIndices(c_slacks)
+                slack= c_slacks[d,c]^2 
+                target = tq[d,c]^2 
+                if target == 0 && slack == 0 
+                        sol_quality[d,c]= 0 
+                elseif target == 0 && slack != 0 
+                        error("stock target ($d), chemical $(all_chemcials[c]), unbounded error")
+                else
+                        sol_quality[d,c]= slack/target 
                 end 
-                throw(MixingError("the requested destination stocks cannot be made using this combination of sources and robot \n the following constraints are in conflict:",out_cons))
-            end 
         end 
-        current_slacks=abs.(JuMP.value.(slacks))
-         
-        for i in 1:I
-            if weights[i]
-                delta=slack_tolerance * dq[:,i] # delta is the tolerance we give to updating the slack in higher priority levels, it is some fraction of the dispense target quantity for every destination. Wiggle room for the slack in future iterations 
-                current_slack=current_slacks[:,i]
-                @constraint(model, slacks[:,i] .>= -current_slack .- delta)
-                @constraint(model, slacks[:,i] .<= current_slack .+ delta)
-            end 
+        if max(sol_quality) > obj_tolerance
+                error("unacceptable solution: \n max error = $(max(sol_quality)*100)% \n tolerance limit = $(obj_tolerance*100)%")
         end 
-       
-        
-    end 
-    #reset the optimizer to remove the objective cutoff since we are switching objectives 
-    set_optimizer(model,Gurobi.Optimizer)
-    set_attribute(model,"TimeLimit",timelimit)
-    optimize!(model) # resolve one last time with the final slack constraints -> we need to optimize before querying results for the secondary objectives 
-
-    
 
 
-    #solve for secondary objectives
-    for obj! in secondary_objectives # secondary objectives only improve the solution quality after we have found a valid solution to the dispense problem 
-        obj!(model) # execute the secondary objectives sequentially, objectives update the model in place. The general outline for a secondary objective function is:  Define variable to measure objective -> Optimize -> Constrain variable 
-        optimize!(model) # re-optimize before qeurying again
-    end 
 
+        dispense_ops = map(x->JumP.value.(x),Vd)
+        slotting_indicators = map(x-> sum(x) > 0, dispense_ops) 
 
-    cap_vals=JuMP.value.(caps) 
-    quants=JuMP.value.(q)[:,:,1:R]
+        config_dispenses=Matrix{Real}[]
 
-    
-    
+        for con in eachindex(configs)[1:end-1] 
+                ops = dispense_ops[:,:,con]
+                Q_config= zeros(W,W) 
+                for la_idx in 1:L
+                        la= all_labware[la_idx]
+                        Ma,p1,p2,p3=masks(configs[con],la)
+                        for ld in 1:L
+                                ld=all_labware[ld_idx]
+                                p1,Md,p2,p3=masks(configs[con],ld)
+                                for ida in eachindex(children(la))
+                                        i = get_well_index(la,la_idx,ida)
+                                        for idd in eachindex(children(ld))
+                                                j = get_well_index(ld,findfirst(x->x==ld,all_labware),idd)
+                                                Q_config[i,j]=sum([Ma(i,pa,cha)*Md(j,pd,chd)*ops[la_idx,ld_idx][pa,cha,pd,chd] for (pa,cha,pd,chd) in CartesianIndices(ops[la_idx,ld_idx])])
+                                        end
+                                end
+                        end
+                end
 
-    sources_needed=sum(quants,dims=2) # the total quantity of each source across all robots and destinations.
-
-    overdrafts = sources_needed .- cap_vals
-    if any(overdrafts .>overdraft_tolerance) 
-        overdraft_dict=Dict{JLIMS.Culture,Unitful.Quantity}()
-        for i in findall(x-> x > 0 ,overdrafts)
-            od=overdrafts[i]
-            overdraft_dict[sources[i]] = od * preferred_quantity(sources[i])
+                push!(config_dispenses,Q_config)
         end 
-        throw(OverdraftError("Refills are needed for $(length(collect(keys(overdraft_dict)))) sources:",overdraft_dict))
-    end 
-    transfers=DataFrame[]   
-    
-    for robot in robots 
-        r = findfirst(x->x==robot,robots)
-        tf = DataFrame()
-        for dest in destinations
-            quantities=Any[]
-            d=findfirst(x->x==dest,destinations)
-            for src in sources
-                un=preferred_quantity(src)
-                    s=findfirst(x->x==src,sources)
-                    val=quants[s,d,r]
-                    push!(quantities,val*un) # commit the transfer to the transfers vector for this destination stock 
-            end 
-            tf[:,Symbol("Well$(well(dest).id)")]=quantities
+
+
+
+
+        if return_model 
+                return config_dispenses,slotting_indicators,model 
+        else
+                return config_dispense,slotting_indicators
         end
-        push!(transfers,tf)
-    end  
-    println("Solution off target by $(sum(JuMP.value.(slacks).^2)/sum(dq.^2)*100)%")
 
-    if return_model
-        return transfers,model
-    else 
-        return transfers
-    end 
-end 
-    
-function dispense_solver(sources::Any,destinations::Any,robots::Vector{V},secondary_objectives...;kwargs...) where  V<:Robot
-        # calculate destination compatibility 
-        src_pairs= Iterators.product(sources,robots) |> collect
-        source_compatibility = Base.splat(is_compatible_source).(src_pairs) 
-        return dispense_solver(sources,destinations,robots,source_compatibility,secondary_objectives...;kwargs...)
-end 
-
-function dispense_solver(sources::Vector{T},destinations::Any,robots::Vector{V},source_compatibility::BitMatrix,secondary_objectives...;kwargs...) where {T<:JLIMS.Stock,V<:Robot}
-    srcs = convert.((JLIMS.Culture,),sources)
-    return dispense_solver(srcs,destinations,robots,source_compatibility,secondary_objectives...;kwargs...)
-end 
-
-function dispense_solver(sources,destinations::Vector{U},robots::Vector{V},source_compatibility::BitMatrix,secondary_objectives...;kwargs...) where {U<:JLIMS.Stock,V<:Robot}
-    dests = convert.((JLIMS.Culture,),destinations)
-    return dispense_solver(sources,dests,robots,source_compatibility,secondary_objectives...;kwargs...)
-end 
-
-function dispense_solver(sources::Vector{T},destinations::Vector{T},robots::Vector{V},source_compatibility,secondary_objectives...;kwargs...) where {T<:JLIMS.Stock,V<:Robot}
-    srcs = convert.((JLIMS.Culture,),sources)
-    dests = convert.((JLIMS.Culture,),destinations)
-    return dispense_solver(srcs,dests,robots,source_compatibility,secondary_objectives...;kwargs...)
 end
 
 
 
+function get_well_index(all_labware,lw_index,well_index)
+        start = sum(x->length(x),all_labware[1:(lw_index-1)])
+        return start+well_index
+end 
 
 
 
-
-#=
-using JLDispense,JLD2
-
-sources=JLD2.load("./src/Mixer/dwp_stocks.jld2")["stocks"]
-destinations=JLD2.load("./src/Mixer/stock_targets.jld2")["out"]
-alts=JLD2.load("./src/Mixer/example_stocks.jld2")["stocks"]
-t,m=dispense_solver(sources,destinations,cobra_default;return_model=true)
-t,m=dispense_solver(sources,destinations,mantis_default;return_model=true)
-=#
+function write_masked_operation_variables(model,config,l_asp,l_disp)
+        a,b,Sa,c=masks(head(config),l_asp) # a,b,c are irrelevant for this function 
+        a,b,c,Sd=masks(head(config),l_disp)
+        return @variable(model, [1:Sa[1],1:Sa[2],1:Sd[1],1:Sd[2]],lower_bound= 0 ) # all of the positions of the mask for both the aspirate and dispense labware 
+end 
+ 

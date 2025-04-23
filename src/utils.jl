@@ -75,79 +75,77 @@ end
 
 
 plotting_shape(::Labware) = rectangle 
-plotting_shape(::JLConstants.Tube) =circle
-
-
-function slotting_greedy(labware::Vector{<:Labware},config::Configuration)
-
-    slotting = SlottingDict()
-    all_slots = Set{Tuple{DeckPosition,Int}}()
-
-    for position in deck(config) 
-        n_slots = prod(position.slots)
-        for i in 1:n_slots 
-            push!(all_slots,(position,i))
-        end 
-    end 
-
-    for lw in labware 
-        for s in all_slots 
-            if can_place(lw,s[1])
-                slotting[lw]= s 
-                delete!(all_slots,s)
-                break 
-            end 
-        end 
-        if !in(lw,keys(slotting))
-            error("cannot find an open slot for $lw, use differnt labware or change the configuration")
-        end 
-    end 
-    return slotting
-end 
+plotting_shape(::JLConstants.Tube) = circle
 
 
 
 
 
 
-function plot(slotting::SlottingDict,config::Configuration;wrapwidth::Integer=20,fontsize::Integer=14)
-    positions = unique(map(x->x[1],values(slotting)))
-    n=length(positions)
+
+
+function plot(slotting::SlottingDict,config::Configuration;wrapwidth::Integer=20,titlefontsize::Integer=18,fontsize::Integer=14,plotsize=(1200,800))
 
     
 
     plot_shape=size(deck(config))
 
     plts = [] 
-    for pos in positions 
-        r,c=slots(pos)
-        k = r*c 
-        lw= filter(x-> slotting[x][1]==pos,keys(slotting))
-        vals = fill("",r,c)
-        plotfun = Matrix{Function}(fill(circle,r,c))
-        for l in lw 
-            idx = slotting[l][2]
-            vals[idx]= JLIMS.name(l)
-            plotfun[idx]=plotting_shape(l)
-        end 
-        plt=plot(grid=false,size=(1200,800),yflip=true,legend=false,dpi=300,xticks=1:c,yticks=(1:r,rack_codes(r)),xmirror=true,tickdirection=:none,tickfontsize=18)
+    for row in 1:plot_shape[1]
+        for col in 1:plot_shape[2]
 
-        for x in 1:c
-            for y in 1:r 
-                annotate!(x,y,text(TextWrap.wrap(vals[y,x],width=wrapwidth),:center,fontsize))
-                plot!(plotfun[y,x](x,y,1),color="black")
+            pos = deck(config)[row,col]
+            plt=plot(pos,titlefontsize=titlefontsize,tickfontsize=titlefontsize)
+            r,c = 1,1
+            if !isa(pos,EmptyPosition)
+                r,c=slots(pos)
+                k = r*c 
+                lw= filter(x-> slotting[x][1]==pos,keys(slotting))
+                vals = fill("",r,c)
+                plotfun = Matrix{Function}(fill(circle,r,c))
+                for l in lw 
+                    idx = slotting[l][2]
+                    vals[idx]= JLIMS.name(l)
+                end 
+                
+
+                for x in 1:c
+                    for y in 1:r 
+                        annotate!(x,y,text(TextWrap.wrap(vals[y,x],width=wrapwidth),:center,fontsize))
+                        plot!((pos.plotting_fun)(x,y,1),color="black")
+                    end 
+                end 
             end 
-        end 
+            
 
-        plot!(ylims=(0.5,r+0.5),xlims=(0.5,c+0.5))
-        plot!(title=pos.name,titlefontsize=20)
-        push!(plts,plt) 
-    end
+            plot!(ylims=(0.5,r+0.5),xlims=(0.5,c+0.5))
+            plot!(title=TextWrap.wrap(name(pos),width=wrapwidth),titlefontsize=titlefontsize)
+            push!(plts,plt) 
+        end
+    end 
+    finalsize = plotsize .* plot_shape
+    plot(plts...,size=finalsize,layout=plot_shape,legend=false,plot_title=TextWrap.wrap(name(config),width=wrapwidth),margins=(10,:mm),titlefontsize=titlefontsize)
+
+end 
 
 
+function plot(pos::SBSPosition;titlefontsize=18,tickfontsize=18) 
+    r,c = slots(pos)
+    plot(grid=false,size=(1200,800),yflip=true,legend=false,dpi=300,xticks=1:c,yticks=(1:r,rack_codes(r)),xmirror=true,tickdirection=:none,tickfontsize=tickfontsize)
+end 
 
 
+function plot(pos::StackPosition;titlefontsize=18,tickfontsize=18)
+    r,c = slots(pos) 
+    plot(grid=false,size=(1200* r/4,800),yflip=false,legend=false,dpi=300,xticks=1:c,yticks=(1:r),xmirror=true,tickdirection=:none,tickfontsize=tickfontsize)
+end 
 
-    plot(plts...,layout=plot_shape,legend=false,title=typeof(config))
+function plot(pos::EmptyPosition;titlefontsize=18,tickfontsize=18)
+    r,c=(1,1)
+    plot(showaxis=false,grid=false,size=(1200,800),yflip=true,legend=false,dpi=300,ticks=:none)
+end 
 
+function plot(pos::UnconstrainedPosition;titlefontsize=18,tickfontsize=18)
+    r,c= slots(pos)
+    plot(grid=false,size=(1200* r/4,800*c/4),yflip=false,legend=false,dpi=300,xticks=1:c,yticks=(1:r),xmirror=true,tickdirection=:none,tickfontsize=tickfontsize)
 end 

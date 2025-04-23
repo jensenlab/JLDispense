@@ -28,9 +28,9 @@ const eight_channel_deck = [eight_channel_position,eight_channel_position]
 EightChannelConfiguration = Configuration{EightChannelHead,Deck{EightChannelDeckPosition},EightChannelSettings}
 
 
-const multichannel_p1000 = EightChannelConfiguration(p1000_multichannel_head,eight_channel_deck,eight_channel_settings)
-const multichannel_p100 = EightChannelConfiguration(p100_multichannel_head,eight_channel_deck,eight_channel_settings)
-const multichannel_p10 = EightChannelConfiguration(p10_multichannel_head,eight_channel_deck,eight_channel_settings)
+const multichannel_p1000 = EightChannelConfiguration("P-1000 Multichannel",p1000_multichannel_head,eight_channel_deck,eight_channel_settings)
+const multichannel_p100 = EightChannelConfiguration("P-100 Multichannel",p100_multichannel_head,eight_channel_deck,eight_channel_settings)
+const multichannel_p10 = EightChannelConfiguration("P-10 Multichannel",p10_multichannel_head,eight_channel_deck,eight_channel_settings)
 # deck access functions
 function can_aspirate(h::EightChannelHead, d::EightChannelDeckPosition,l::Labware) 
     return can_place(l,d)
@@ -47,6 +47,7 @@ function masks(h::EightChannelHead,l::JLConstants.WellPlate) # for generic 96 we
     Pi,Pj = 1,Wj
     W = falses(Wi,Wj)
     P=falses(Pi,Pj)
+    S = (Pi*Pj,C)
     function Ma(w::Integer,p::Integer,c::Integer) 
         # w=wells, p=positions, c=channels
         1 <= w <= Wi*Wj || return false 
@@ -57,7 +58,7 @@ function masks(h::EightChannelHead,l::JLConstants.WellPlate) # for generic 96 we
         return  wj == pn 
     end 
     Md = deepcopy(Ma) 
-    return Ma,Md
+    return Ma,Md,S,S
 end 
 
 function masks(h::EightChannelHead,l::JLConstants.WP384) 
@@ -66,6 +67,7 @@ function masks(h::EightChannelHead,l::JLConstants.WP384)
     Pi,Pj = 2,Wj
     W = falses(Wi,Wj)
     P=falses(Pi,Pj)
+    S = (Pi*Pj,C)
     function Ma(w::Integer,p::Integer,c::Integer) 
         # w=wells, p=positions, c=channels
         1 <= w <= Wi*Wj || return false 
@@ -76,7 +78,7 @@ function masks(h::EightChannelHead,l::JLConstants.WP384)
         return wi % 2 == 2-pm && wj == pn 
     end 
     Md = deepcopy(Ma) 
-    return Ma,Md
+    return Ma,Md,S,S
 end 
 
 

@@ -23,7 +23,7 @@ end
 
 PlateMasterConfiguration = Configuration{PlateMasterHead,Deck{PlateMasterDeckPosition},PlateMasterSettings}
 
-const platemaster =PlateMasterConfiguration(PlateMasterHead(),platemaster_deck,PlateMasterSettings())
+const platemaster =PlateMasterConfiguration("PlateMaster",PlateMasterHead(),platemaster_deck,PlateMasterSettings())
 
 function can_aspirate(h::PlateMasterHead, d::PlateMasterDeckPosition,l::Labware) 
     return can_place(l,d)
@@ -43,6 +43,7 @@ function masks(h::PlateMasterHead,l::JLConstants.WellPlate) # for generic 96 wel
     W = falses(Wi,Wj)
     P=falses(Pi,Pj)
     C=falses(Ci,Cj)
+    S = (Pi*Pj,C)
     function Ma(w::Integer,p::Integer,c::Integer) 
         # w=wells, p=positions, c=channels
         1 <= w <= Wi*Wj || return false 
@@ -54,7 +55,7 @@ function masks(h::PlateMasterHead,l::JLConstants.WellPlate) # for generic 96 wel
         return wi == ci  && wj == cj
     end 
     Md = deepcopy(Ma) 
-    return Ma,Md
+    return Ma,Md,S,S
 end 
 
 
@@ -77,7 +78,7 @@ function masks(h::PlateMasterHead,l::JLConstants.WP384)
         return wi % 2 == 2-pm  && wj % 2  == 2-pn
     end 
     Md = deepcopy(Ma) 
-    return Ma,Md
+    return Ma,Md,S,S
 end 
 
 

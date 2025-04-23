@@ -37,12 +37,9 @@ struct CobraHead <: TransferHead
   nozzles::AbstractArray{Nozzle}
 end 
 
-struct CobraDeckPosition <: DeckPosition 
-  labware::Set{Type{<:Labware}}
-end 
 
 
-CobraConfiguration = Configuration{CobraHead,Deck{CobraDeckPosition},CobraSettings} 
+CobraConfiguration = Configuration{CobraHead,Deck,CobraSettings} 
 
 const cobra_nozzle = ContinuousNozzle(0.3u"µL",40u"µL",800u"µL",20u"µL",1.1,true)
 
@@ -51,28 +48,20 @@ const cobra_head = CobraHead(fill(cobra_nozzle,4,1))
 
 const cobra_compat_labware= Set([JLConstants.DeepWP96,JLConstants.WP96,JLConstants.WP384])
 
-const cobra_position_1=CobraDeckPosition(cobra_compat_labware)
-const cobra_position_2=CobraDeckPosition(cobra_compat_labware)
+const cobra_position_1=SBSPosition("Slot 1", cobra_compat_labware,(1,1),true,false,false,false,rectangle)
+const cobra_position_2=SBSPosition("Slot 2", cobra_compat_labware,(1,1),false,true,false,false,rectangle)
 
 const cobra_deck = [cobra_position_1,cobra_position_2]
 
 const cobra_settings= CobraSettings(true,0,"C:\\Users\\Dell\\Dropbox (University of Michigan)\\JensenLab\\Cobra\\",8000,1.1,2)
 
-const cobra =CobraConfiguration(cobra_head,cobra_deck,cobra_settings)
+const cobra =CobraConfiguration("Cobra",cobra_head,cobra_deck,cobra_settings)
 
 
 liquidclass(::JLIMS.Stock) = "Water" 
  
 
-### define deck access functions 
 
-
-function can_aspirate(h::CobraHead, d::CobraDeckPosition,l::Labware) 
-  return can_place(l,d)
-end
-function can_dispense(h::CobraHead,d::CobraDeckPosition,l::Labware) 
-  return can_place(l,d)
-end
 
 # define masks 
 
@@ -82,6 +71,7 @@ function masks(h::CobraHead,l::JLConstants.WellPlate) # for generic 96 well plat
   Pi,Pj = 5,12
   W = falses(Wi,Wj)
   P=falses(Pi,Pj)
+  Sa=(Pi*Pj,C)
   function Ma(w::Integer,p::Integer,c::Integer) 
       # w=wells, p=positions, c=channels
       1 <= w <= Wi*Wj || return false 
@@ -96,6 +86,7 @@ function masks(h::CobraHead,l::JLConstants.WellPlate) # for generic 96 well plat
   Pi,Pj = 11,12
   W = falses(Wi,Wj)
   P=falses(Pi,Pj)
+  Sd=(Pi*Pj,C)
   function Md(w::Integer,p::Integer,c::Integer) 
       # w=wells, p=positions, c=channels
       1 <= w <= Wi*Wj || return false 
@@ -105,15 +96,15 @@ function masks(h::CobraHead,l::JLConstants.WellPlate) # for generic 96 well plat
       pm,pn=cartesian(P,p)
       return wi == c+pm-4 && wj == pn 
   end 
-  return Ma,Md
-end 
-
+  return Ma,Md,Sa,Sd
+end
 function masks(h::CobraHead,l::JLConstants.WP384) 
   C= length(nozzles(h))
   Wi,Wj=shape(l)
   Pi,Pj = 10,12
   W = falses(Wi,Wj)
   P=falses(Pi,Pj)
+  Sa=(Pi*Pj,C)
   function Ma(w::Integer,p::Integer,c::Integer) 
       # w=wells, p=positions, c=channels
       1 <= w <= Wi*Wj || return false 
@@ -128,6 +119,7 @@ function masks(h::CobraHead,l::JLConstants.WP384)
   Pi,Pj = 22,12
   W = falses(Wi,Wj)
   P=falses(Pi,Pj)
+  Sd=(Pi*Pj,C)
   function Md(w::Integer,p::Integer,c::Integer) 
       # w=wells, p=positions, c=channels
       1 <= w <= Wi*Wj || return false 
@@ -137,7 +129,7 @@ function masks(h::CobraHead,l::JLConstants.WP384)
       pm,pn=cartesian(P,p)
       return wi == 2*(c-1)+pm-6 && wj == pn 
   end 
-  return Ma,Md
+  return Ma,Md,Sa,Sd
 end 
 
 
@@ -611,6 +603,41 @@ end
 
 
 
+function convert_design(design::DataFrame,labware::Vector{<:Labware},slotting::SlottingDict,config::CobraConfiguration)
+
+
+  all(map(x-> x[1] in deck(config),values(slotting))) || ArgumentError("All deck positions in the SlottingDict must be present on the deck")
+  source_cols=[]
+  dispense_rows=[]
+  source_names= []
+  for col in 1:ncol(design)
+      lw=get_labware(labware,col)
+      if can_aspirate(head(config),slotting[lw],lw) 
+          push!(source_cols,col)
+          push!(source_names,JLIMS.name(lw))
+      end 
+  end 
+  for row in 1:nrow(design) 
+      lw=get_labware(labware,row)
+      if can_dispense(head(config),slotting[lw],lw)
+          push!(dispense_rows,row)
+      end 
+  end 
+
+  out_design = design[dispense_rows,source_cols]
+
+  dest_labware= filter(x-> can_dispense(head(config),slotting[x],x),labware)
+  src_labware =filter(x-> can_aspirate(head(config),slotting[x],x),labware)
+  if length(dest_labware) > 1 
+      error("multiple destination labware detected. Cobra only supports a single destination labware")
+  end 
+
+  if length(src_labware) > 1 
+    error("multiple source labware detected. Cobra only suppors a single source labware.")
+  end 
+  return out_design, src_labware[1],dest_labware[1]
+end 
+
 
 
 """
@@ -628,7 +655,8 @@ Create Cobra dipsense instructions for well plate dispensing
 
 
 """
-function dispense(config::CobraConfiguration, design::DataFrame, directory::AbstractString,protocol_name::AbstractString,source::Labware,destination::Labware) 
+function dispense(config::CobraConfiguration, design::DataFrame, directory::AbstractString,protocol_name::AbstractString,labware::Vector{<:Labware},slotting::SlottingDict=slotting_greedy(labware,config);render_loading=true) 
+    dispenses,source,destination = convert_design(design,labware,slotting,config)
     full_dir=joinpath(directory,protocol_name)
     if ~isdir(full_dir)
       mkdir(full_dir)
@@ -643,16 +671,14 @@ function dispense(config::CobraConfiguration, design::DataFrame, directory::Abst
     write(full_softlinx_name,softlinx)
     write(joinpath(full_dir,"config.json"),JSON.json(cobra_configs))
     #print("entire $(experiment_name) folder must be moved to Dropbox -> JensenLab -> Cobra")
-    
+    if render_loading 
+      plt = plot(slotting,config)
+      png(joinpath(full_dir,"loading.png"))
+    end 
     return nothing 
-    # include the wasted sources because we pad the aspiration  Well # 1 is designated for waste. 
 end
 
-function dispense(config::CobraConfiguration,design::DataFrame,directory::AbstractString,protocol_name::AbstractString,source::Type{<:Labware},destination::Type{<:Labware})
-  src=source(1,"source_instance")
-  dst=destinatino(1,"destination_instance")
-  return dispense(config,design,directory,protocol_name,src,dst)
-end 
+
 
 
 

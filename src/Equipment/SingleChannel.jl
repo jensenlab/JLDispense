@@ -34,25 +34,18 @@ const single_channel_settings= SingleChannelSettings()
 
 
 
-const single_channel_deck = [UnconstrainedDeckPosition(),UnconstrainedDeckPosition()]
+const single_channel_deck = [UnconstrainedPosition("Position 1",true,true,false,false,rectangle)]
 
-SingleChannelConfiguration = Configuration{SingleChannelHead,Deck{UnconstrainedDeckPosition},SingleChannelSettings}
-
-
-const p1000 = SingleChannelConfiguration(p1000_head,single_channel_deck,single_channel_settings)
-const p200 = SingleChannelConfiguration(p200_head,single_channel_deck,single_channel_settings)
-const p20 = SingleChannelConfiguration(p20_head,single_channel_deck,single_channel_settings)
-const p2 = SingleChannelConfiguration(p2_head,single_channel_deck,single_channel_settings)
-
-### define deck access functions 
+SingleChannelConfiguration = Configuration{SingleChannelHead,Deck{UnconstrainedPosition},SingleChannelSettings}
 
 
-function can_aspirate(h::SingleChannelHead, d::UnconstrainedDeckPosition,l::Labware) 
-    return can_place(l,d)
-end
-function can_dispense(h::SingleChannelHead,d::UnconstrainedDeckPosition,l::Labware) 
-    return can_place(l,d)
-end
+const p1000 = SingleChannelConfiguration("P-1000",p1000_head,single_channel_deck,single_channel_settings)
+const p200 = SingleChannelConfiguration("P-200",p200_head,single_channel_deck,single_channel_settings)
+const p20 = SingleChannelConfiguration("P-20",p20_head,single_channel_deck,single_channel_settings)
+const p2 = SingleChannelConfiguration("P-2",p2_head,single_channel_deck,single_channel_settings)
+
+
+
 
 
 
@@ -62,6 +55,7 @@ function masks(h::SingleChannelHead,l::JLIMS.Labware)
     Pi,Pj =shape(l)
     W = falses(Wi,Wj)
     P=falses(Pi,Pj)
+    S = (Pi*Pj,C)
     function Ma(w::Integer,p::Integer,c::Integer) 
         # w=wells, p=positions, c=channels
         1 <= w <= Wi*Wj || return false 
@@ -72,7 +66,7 @@ function masks(h::SingleChannelHead,l::JLIMS.Labware)
         return wi == pm && wj == pn 
     end 
     Md = deepcopy(Ma) 
-    return Ma,Md
+    return Ma,Md,S,S
 end 
 
 

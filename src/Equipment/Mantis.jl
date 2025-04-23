@@ -32,59 +32,21 @@ end
 struct MantisSettings <:InstrumentSettings
     MantisSettings() = new()
 end 
-abstract type MantisDeckPosition <: DeckPosition end 
-struct MantisLC3Position <: MantisDeckPosition
-    labware::Set{Type{<:Labware}}
-    MantisLC3Position()=new(Set([JLConstants.TipReservior,JLConstants.Conical15]))
-end 
 
-struct MantisHVPosition <: MantisDeckPosition
-    labware::Set{Type{<:Labware}}
-    MantisHVPosition()=new(Set([JLConstants.Conical]))
-end 
+    
+const lc3 = StackPosition("LC3",Set([JLConstants.TipReservior,JLConstants.Conical15]),(24,1),true,false,false,false,circle)
+const mantis_hv_pos = StackPosition("Mantis High Volume" , Set([JLConstants.Conical]),(4,1),true,false,false,false,circle)
+const mantis_main = SBSPosition("Mantis Center Position",Set([JLConstants.MicroPlate,JLConstants.BreakawayPCRPlate]),(1,1),false,true,false,false,rectangle)
 
-struct MantisMainPosition <: MantisDeckPosition
-    labware::Set{Type{<:Labware}}
-    MantisMainPosition()=new(Set([JLConstants.MicroPlate,JLConstants.BreakawayPCRPlate]))
-end  
-
-
-
-
-const mantis_deck = vcat(fill(MantisLC3Position(),24),fill(MantisHVPosition(),4),MantisMainPosition())
+const mantis_deck = vcat(mantis_hv_pos,mantis_main,lc3)
 
 
 MantisConfiguration = Configuration{MantisHead,Deck,MantisSettings}
 
-const mantis_lv = MantisConfiguration(MantisLVHead(),mantis_deck,MantisSettings())
-const mantis_hv = MantisConfiguration(MantisHVHead(),mantis_deck,MantisSettings())
+const mantis_lv = MantisConfiguration("Mantis Low Volume",MantisLVHead(),mantis_deck,MantisSettings())
+const mantis_hv = MantisConfiguration("Mantis High Volume",MantisHVHead(),mantis_deck,MantisSettings())
 
 ### define deck access functions 
-
-
-function can_aspirate(h::MantisHead, d::MantisDeckPosition,l::Labware) 
-    return false 
-end 
-function can_dispense(h::MantisHead,d::MantisDeckPosition,l::Labware)
-    return false
-end 
-function can_dispense(h::MantisHead, d::MantisMainPosition,l::Labware) 
-    return can_place(l,d)
-end 
-
-function can_aspirate(h::MantisLVHead, d::MantisLC3Position,l::Labware) 
-    return can_place(l,d)
-end 
-function can_aspirate(h::MantisHVHead,d::MantisHVPosition,l::Labware)
-    return can_place(l,d)
-end
-function can_move(h::MantisHead,d::DeckPosition,l::Labware)
-  return false 
-end
-function can_read(h::CobraHead,d::DeckPosition,l::Labware)
-  return false
-end 
-
 
 
 function masks(h::MantisHead,l::JLConstants.WellPlate) # for generic 96 well plates, we will define a separate method for 384 well plates 
@@ -105,7 +67,7 @@ function masks(h::MantisHead,l::JLConstants.WellPlate) # for generic 96 well pla
         pm,pn=cartesian(P,p)
         return wi == pm && wj == pn 
     end 
-    return Ma,Md
+    return Ma,Md, (0,0),(Pi*Pj,C)
 end 
 
 function masks(h::MantisLVHead,l::Union{JLConstants.Conical15,JLConstants.TipReservior}) # for generic 96 well plates, we will define a separate method for 384 well plates 
@@ -126,7 +88,7 @@ function masks(h::MantisLVHead,l::Union{JLConstants.Conical15,JLConstants.TipRes
     function Md(w::Integer,p::Integer,c::Integer) 
         return false 
     end 
-    return Ma,Md
+    return Ma,Md,(Pi*Pj,C),(0,0)
 end 
 
 function masks(h::MantisHVHead,l::JLConstants.Conical50) # for generic 96 well plates, we will define a separate method for 384 well plates 
@@ -147,8 +109,43 @@ function masks(h::MantisHVHead,l::JLConstants.Conical50) # for generic 96 well p
     function Md(w::Integer,p::Integer,c::Integer) 
         return false 
     end 
-    return Ma,Md
+    return Ma,Md,(Pi*Pj,C),(0,0)
 end 
+
+
+
+function convert_design(design::DataFrame,labware::Vector{<:Labware},slotting::SlottingDict,config::MantisConfiguration)
+
+    all(map(x-> x[1] in deck(config),values(slotting))) || ArgumentError("All deck positions in the SlottingDict must be present on the deck")
+    source_cols=[]
+    dispense_rows=[]
+    source_names= []
+    for col in 1:ncol(design)
+        lw=get_labware(labware,col)
+        if can_aspirate(head(config),slotting[lw],lw) 
+            push!(source_cols,col)
+            push!(source_names,JLIMS.name(lw))
+        end 
+    end 
+    for row in 1:nrow(design) 
+        lw=get_labware(labware,row)
+        if can_dispense(head(config),slotting[lw],lw)
+            push!(dispense_rows,row)
+        end 
+    end 
+
+    out_design = design[dispense_rows,source_cols]
+
+    dest_labware= filter(x-> can_dispense(head(config),slotting[x],x),labware)
+
+    if length(dest_labware) > 1 
+        error("multiple destination labware detected. Mantis only supports a single destination labware")
+    end 
+
+    return out_design, dest_labware[1],source_names
+end 
+
+        
 
 
 
@@ -165,9 +162,8 @@ Create Mantis dipsense instructions for SBS plate dispensing
 * `protocol_name`: protocol name  
 * `destinations`: A JLIMS.Labware destination object  
 """
-function dispense(config::MantisConfiguration, design::DataFrame,directory::AbstractString,protocol_name::AbstractString,destination::Labware)
-        R,C=destination.shape
-        source_names=names(design)
+function dispense(config::MantisConfiguration, design::DataFrame,directory::AbstractString,protocol_name::AbstractString,labware::Vector{<:Labware},slotting::SlottingDict = slotting_greedy(labware,config);render_loading=true)
+        dispenses,destination,source_names= convert_design(design,labware,slotting,config)
         full_dir=joinpath(directory,protocol_name)
         if ~isdir(full_dir)
             mkdir(full_dir)
@@ -186,7 +182,7 @@ function dispense(config::MantisConfiguration, design::DataFrame,directory::Abst
         for i in 1:n_stocks 
             vols=ustrip.(uconvert((u"µL",),design[:,i]))
             vols=round.(reshape(vols,R,C),digits=1)
-            print(outfile,join([names(design)[i],"","Normal"],'\t'),"\r\n")
+            print(outfile,join([source_names[i],"","Normal"],'\t'),"\r\n")
             print(outfile,join(["Well",1],'\t'),"\r\n")
             for r in 1:R
                 print(outfile,join(vols[r,:],'\t'),"\r\n")
@@ -194,26 +190,15 @@ function dispense(config::MantisConfiguration, design::DataFrame,directory::Abst
         end 
         close(outfile)
         write(joinpath(full_dir,"config.json"),JSON.json(robot))
+        if render_loading 
+            plt = plot(slotting,config)
+            png(joinpath(full_dir,"loading.png"))
+        end 
         return nothing 
 end 
 
 
-"""
-    dispense(config::MantisConfiguration, design::DataFrame,directory::AbstractString,protocol_name::AbstractString,destination::Type{<:Labware})
 
-Create Mantis dipsense instructions for SBS plate dispensing
-
-## Arguments 
-* `config`: A Configuration object defining the Mantis
-* `design`: a (# of sources) x (# of destinations) dataframe containing the volume of each transfer in µL.
-* `directory`: output file directory
-* `protocol_name`: protocol name  
-* `destinations`: A JLIMS.Labware destination subtype  
-"""
-function dispense(config::MantisConfiguration,design::DataFrame, directory::AbstractString,protocol_name::AbstractString,destination::Type{<:Labware})
-    dest=destination(1,"example_instance")
-    return dispense(config,desing,directory,protocol_name,dest)
-end 
 
 
 

@@ -43,8 +43,8 @@ tempest_deck= vcat(fill(TempestInput(),6),fill(TempestMagazine(),24))
 
 TempestConfiguration=Configuration{TempestHead,Deck,TempestSettings}
 
-const tempest_lv = TempestConfiguration(TempestLVHead(),tempest_deck,TempestSettings())
-const tempest_hv = TempestConfiguration(TempestHVHead(),tempest_deck,TempestSettings())
+const tempest_lv = TempestConfiguration("Tempest Low Volume",TempestLVHead(),tempest_deck,TempestSettings())
+const tempest_hv = TempestConfiguration("Tempest High Volume",TempestHVHead(),tempest_deck,TempestSettings())
 
 
 
@@ -87,7 +87,7 @@ function masks(h::TempestHead,l::JLConstants.WP384) # for generic 96 well plates
         pm,pn=cartesian(P,p)
         return wi = 2*(c-1)+pm && wj == pn 
     end 
-    return Ma,Md
+    return Ma,Md,(0,0),(Pi*Pj,C)
 end 
 
 
@@ -109,7 +109,7 @@ function masks(h::TempestHead,l::Union{JLConstants.Bottle,JLConstants.Tube}) # f
     function Md(w::Integer,p::Integer,c::Integer) 
         return false 
     end 
-    return Ma,Md
+    return Ma,Md,(Pi*Pj,C),(0,0)
 end 
 
 
@@ -122,7 +122,68 @@ end
     WP384=>"PT9-384-Assay.pd.txt")
 
 
+    function convert_design(design::DataFrame,labware::Vector{<:Labware},slotting::SlottingDict,config::TempestConfiguration)
 
+        all(map(x-> x[1] in deck(config),values(slotting))) || ArgumentError("All deck positions in the SlottingDict must be present on the deck")
+        source_cols=[]
+        dispense_rows=[]
+        source_names= []
+        for col in 1:ncol(design)
+            lw=get_labware(labware,col)
+            if can_aspirate(head(config),slotting[lw],lw) 
+                push!(source_cols,col)
+                push!(source_names,JLIMS.name(lw))
+            end 
+        end 
+        for row in 1:nrow(design) 
+            lw=get_labware(labware,row)
+            if can_dispense(head(config),slotting[lw],lw)
+                push!(dispense_rows,row)
+            end 
+        end 
+    
+        out_design = design[dispense_rows,source_cols]
+    
+        dest_labware= filter(x-> can_dispense(head(config),slotting[x],x),labware)
+        allequal(map(x->typeof(x),dest_labware)) || error("all destination labware must be the same type for a multidispense list tempest run")
+        if length(dest_labware) > 1 
+            dest_lw = get_labware.((dest_labware,),nrow(out_design))
+            outs= DataFrame[]
+
+            for l in dest_labware
+                idxs=findall(x->x==l,dest_lw)
+                push!(outs,out_design[idxs,:])
+            end
+            return outs ,dest_labware, fill(source_names,length(dest_labware))
+        else
+            return out_design, dest_labware[1],source_names
+        end
+    end 
+    
+function write_tempest_dl(dispenses::DataFrame,labware::Labware, filename::String,source_names::Vector{String})
+    n_stocks=ncol(dispenses)
+    outfile=open(filename,"w")
+    platefilename=tempest_names[typeof(labware)]
+    if platefilename==""
+        error(ArgumentError("Selected plate type $(typeof(labware)) is not supported by Tempest."))
+    end 
+    print(outfile,join(["Version            :", 6],'\t'),"\r\n")
+    print(outfile,join(["Plate type name    :", platefilename],'\t'),"\r\n")
+    print(outfile,join(["Priority Delays    :", 0],'\t'),"\r\n")
+    R,C=shape(labware)
+
+    for i in 1:n_stocks 
+        vols=Vector(dispenses[:,i])
+        vols=reshape(vols,R,C)
+        print(outfile,join(["Reagent Name    :", source_names[i]],'\t'),"\r\n")
+        print(outfile,join(["Barcode            :"],'\t'),"\r\n")
+        print(outfile,join(["Priority           :", 1],'\t'),"\r\n")
+        for r in 1:R
+            print(outfile,join(vols[r,:],'\t'),"\r\n")
+        end 
+    end 
+    close(outfile)
+end
 
 #= Adam Dama Python Code 
         with open(path, "w", newline="", encoding="utf-8") as f:
@@ -155,129 +216,40 @@ Create Tempest multidipsense instructions for SBS plate dispensing
   * `protocol_name`: The name of the multidispense list file. The funcion outputs the multidispense list in directory
   * `destination`: A  destination labware. Can either be a JLIMS.Labware object or A JLIMS.Labware subtype 
 """
-function dispense(config::TempestConfiguration,design::DataFrame,directory::AbstractString,protocol_name::AbstractString,destination::Labware)
+function dispense(config::TempestConfiguration,design::DataFrame,directory::AbstractString,protocol_name::AbstractString,labware::Vector{<:Labware},slotting::SlottingDict=slotting_greedy(labware,config))
 
-    R,C=destination.shape
-    source_names=names(design)
-    nrow(design) == R*C || error("design must have the same number rows as there are wells in the destination")
-    full_dir=joinpath(directory,protocol_name)
+    dispenses, destinations, source_names =convert_design(design,labware,slotting,config)
     if ~isdir(full_dir)
         mkdir(full_dir)
-      end 
-    filename=joinpath(full_dir,protocol_name*".dl.txt")
-    n_stocks=ncol(dispenses)
-    #delay_header=vcat(n_stocks,repeat([0,""],n_stocks))
-    outfile=open(filename,"w")
-    platefilename=tempest_names[destination]
-    if platefilename==""
-        error(ArgumentError("Selected plate type $(destination.name) is not supported by Tempest."))
-    end 
-    print(outfile,join(["Version            :", 6],'\t'),"\r\n")
-    print(outfile,join(["Plate type name    :", platefilename],'\t'),"\r\n")
-    print(outfile,join(["Priority Delays    :", 0],'\t'),"\r\n")
+    end
+    N= length(dispenses)
+    full_dir=joinpath(directory,protocol_name)
+    if N == 1  # single dispense file 
+        filename=joinpath(full_dir,protocol_name*".dl.txt")
+        write_tempest_dl(dispenses,destinations,filename,source_names)
+    else  # multidispense 
 
-
-    for i in 1:n_stocks 
-        vols=Vector(dispenses[:,i])
-        vols=reshape(vols,R,C)
-        print(outfile,join(["Reagent Name    :", source_names[i]],'\t'),"\r\n")
-        print(outfile,join(["Barcode            :"],'\t'),"\r\n")
-        print(outfile,join(["Priority           :", 1],'\t'),"\r\n")
-        for r in 1:R
-            print(outfile,join(vols[r,:],'\t'),"\r\n")
+        basenames = [protocol_name*i for i in 1:N]
+        for i in 1:N 
+            filename=joinpath(full_dir,basenames[i]*".dl.txt")
+            write_tempest_dl(dispenses[i],destinations[i],filename,source_names[i])
         end 
-    end 
-    close(outfile)
+        mdlbasename=protocol_name*".mdl.txt"
+        outpath=joinpath(full_dir,mdlbasename)
+        outfile=open(outpath,"w")
+        print(outfile,join(["LP:$(tempest_names[destinations[1]]).pd.txt"],'\t'),"\r\n") # we previously check that all destinations are the same type, so we can safely take the first one
+        for i in 1:n
+            print(outfile,join(["P:$i","TP:1","DL:$(basenames[i])"],'\t'),"\r\n")
+        end
+        close(outfile)
+    end
+    
+    #delay_header=vcat(n_stocks,repeat([0,""],n_stocks))
+
     write(joinpath(full_dir,"config.json"),JSON.json(config))
     return nothing 
 end 
-"""
-    dispense(config::TempestConfiguration,design::DataFrame, directory::AbstractString,protocol_name::AbstractString,destinations::Type{<:Labware})
 
-Create Tempest multidipsense instructions for SBS plate dispensing
-
-  ## Arguments 
-  * `config`: A Configuration object defining the tempest 
-  * `design`: A (# of total runs) x (# of stocks) DataFrame containing the volume of each stock for each run in µL. 
-  * `directory`: the ouput directory of the dispense file. The function automatically strips any incorrect file extension and adds the appropriate one.
-  * `protocol_name`: The name of the multidispense list file. The funcion outputs the multidispense list in directory
-  * `destination`: A  destination labware. Can either be a JLIMS.Labware object or A JLIMS.Labware subtype 
-"""
-function dispense(config::TempestConfiguration,design::DataFrame,directory::AbstractString,protocol_name::AbstractString,destination::Type{<:Labware})
-    dst=destination(1,"destination_instance")
-    return dispense(config,design,directory,protocol_name,dst)
-end 
-
-"""
-    dispense(config::TempestConfiguration,design::DataFrame, directory::AbstractString,protocol_name::AbstractString,destinations::Vector{<:Labware})
-
-Create Tempest multidipsense instructions for SBS plate dispensing
-
-  ## Arguments 
-  * `config`: A Configuration object defining the tempest 
-  * `design`: A (# of total runs) x (# of stocks) DataFrame containing the volume of each stock for each run in µL. 
-  * `directory`: the ouput directory of the dispense file. The function automatically strips any incorrect file extension and adds the appropriate one.
-  * `protocol_name`: The name of the multidispense list file. The funcion outputs the multidispense list in directory
-  * `destination`: A vector of destination labware. Can either be a JLIMS.Labware object or A JLIMS.Labware subtype 
-"""
-function dispense(config::TempestConfiguration,design::DataFrame, directory::AbstractString,protocol_name::AbstractString,destinations::Vector{<:Labware})
-
-    dest_sizes=map(x->prod(shape(x)),destinations)
-    sum(dest_sizes)==nrow(design) || error("number of design rows must equal the number of destinaion wells")
-
-    d_idxs=[sum(dest_sizes[1:i-1])+1:sum(dest_sizes[1:i]) for i in eachindex(dest_sizes)]
-
-    dlnames=[protocol_name*"_$i" for i in eachindex(d_idxs)]
-
-    full_dir=joinpath(directory,protocol_name)
-    if ~isdir(full_dir)
-        mkdir(full_dir)
-    end 
-
-
-    n=0
-    basenames=String[]
-    for i in eachindex(d_idxs)
-        dest=destinations[i]
-        d = design[d_idxs[i],:]
-        if sum(Matrix(d)) > 0u"µL"
-            n+=1
-            tempest(config,d,full_dir,dlnames[i],dest)
-            push!(basenames,dlnames[i]*".dl.txt")
-        end 
-    end 
-
-    mdlbasename=protocol_name*".mdl.txt"
-    outpath=joinpath(full_dir,mdlbasename)
-
-    
-
-    outfile=open(outpath,"w")
-
-    print(outfile,join(["LP:$(destination.tempest).pd.txt"],'\t'),"\r\n")
-    for i in 1:n
-        print(outfile,join(["P:$i","TP:1","DL:$(basenames[i])"],'\t'),"\r\n")
-    end
-    close(outfile)
-    write(joinpath(full_dir,"config.json"),JSON.json(config))
-    return nothing
-end 
-"""
-    dispense(config::TempestConfiguration,design::DataFrame, directory::AbstractString,protocol_name::AbstractString,destinations::Vector{Type{<:Labware}})
-
-Create Tempest multidipsense instructions for SBS plate dispensing
-
-  ## Arguments 
-  * `config`: A Configuration object defining the tempest 
-  * `design`: A (# of total runs) x (# of stocks) DataFrame containing the volume of each stock for each run in µL. 
-  * `directory`: the ouput directory of the dispense file. The function automatically strips any incorrect file extension and adds the appropriate one.
-  * `protocol_name`: The name of the multidispense list file. The funcion outputs the multidispense list in directory
-  * `destination`: A vector of destination labware. Can either be a JLIMS.Labware object or A JLIMS.Labware subtype 
-"""
-function dispense(config::TempestConfiguration,design::DataFrame, directory::AbstractString,protocol_name::AbstractString,destinations::Vector{Type{<:Labware}})
-    dests= destinations.((1,),("destination_instance",))
-    return dispense(config,design,directory,protocol_name,dests)
-end 
 
 
 #=
