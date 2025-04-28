@@ -20,13 +20,13 @@ const mantis_hv_nozzle = DiscreteNozzle(1u"µL",25u"µL",1.1)
 abstract type MantisHead <: TransferHead end 
 
 struct MantisLVHead <: MantisHead 
-    nozzles::Nozzle
-    MantisLVHead() = new(mantis_lv_nozzle)
+    channels::AbstractArray{Nozzle}
+    MantisLVHead() = new([mantis_lv_nozzle])
 end 
 
 struct MantisHVHead <: MantisHead 
-    nozzles::Nozzle
-    MantisHVHead() =new(mantis_hv_nozzle)
+    channels::AbstractArray{Nozzle}
+    MantisHVHead() =new([mantis_hv_nozzle])
 end 
 
 struct MantisSettings <:InstrumentSettings
@@ -51,7 +51,7 @@ const mantis_hv = MantisConfiguration("Mantis High Volume",MantisHVHead(),mantis
 
 function masks(h::MantisHead,l::JLConstants.WellPlate) # for generic 96 well plates, we will define a separate method for 384 well plates 
     C= 1
-    Wi,Wj=shape(l)
+    Wi,Wj=JLIMS.shape(l)
     Pi,Pj = Wi,Wj
     W = falses(Wi,Wj)
     P=falses(Pi,Pj)
@@ -72,7 +72,7 @@ end
 
 function masks(h::MantisLVHead,l::Union{JLConstants.Conical15,JLConstants.TipReservior}) # for generic 96 well plates, we will define a separate method for 384 well plates 
     C= 1
-    Wi,Wj=shape(l)
+    Wi,Wj=JLIMS.shape(l)
     Pi,Pj = 1,1
     W = falses(Wi,Wj)
     P=falses(Pi,Pj)
@@ -93,7 +93,7 @@ end
 
 function masks(h::MantisHVHead,l::JLConstants.Conical50) # for generic 96 well plates, we will define a separate method for 384 well plates 
     C= 1
-    Wi,Wj=shape(l)
+    Wi,Wj=JLIMS.shape(l)
     Pi,Pj = 1,1
     W = falses(Wi,Wj)
     P=falses(Pi,Pj)

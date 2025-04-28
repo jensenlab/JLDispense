@@ -1,334 +1,112 @@
-#### import a proxy database of lab objects 
-chemicals=JLIMS.parse_chemical_csv("test_ingredients.csv")
-strains=JLIMS.parse_strain_csv("test_strains.csv")
-water=chemicals[1]
-iron_nitrate=chemicals[2]
-magnesium_sulfate=chemicals[4]
-SMU_UA159=strains[1]
-conical_50=Container("conical_50ml",50u"mL",(1,1))
-WP96=Container("plate_96",200u"µL",(8,12))
-dwp96_2ml=JLIMS.Container("deep_well_plate_96_2_ml",2.0u"mL",(8,12))
-bottle_250=JLIMS.Container("bottle_250mL",250.0u"mL",(1,1))
-function ing(name;ings=chemicals)
-    return ings[findfirst(x->x.name==name,ings)]
+db_file = "test_jldispense.db"
+
+seed = 52486181
+
+JLIMS.create_db(db_file)
+
+JLIMS.@connect_SQLite db_file 
+
+reservior= generate_location(JLConstants.DeepReservior,"plate_reservior")
+
+deep_well= generate_location(JLConstants.DeepWP96,"deepwell")
+
+wp96=generate_location(JLConstants.WP96,"96-well")
+wp384=generate_location(JLConstants.WP384,"384-well")
+conical50_1=generate_location(JLConstants.Conical50,"conical_1")
+conical50_2=generate_location(JLConstants.Conical50,"conical_2")
+conical50_3=generate_location(JLConstants.Conical50,"conical_3")
+conical50_4=generate_location(JLConstants.Conical50,"conical_4")
+conical50_5=generate_location(JLConstants.Conical50,"conical_5")
+conical50_6=generate_location(JLConstants.Conical50,"conical_6")
+conical50_7=generate_location(JLConstants.Conical50,"conical_7")
+conical50_8=generate_location(JLConstants.Conical50,"conical_8")
+conical50_9=generate_location(JLConstants.Conical50,"conical_9")
+conical50_10=generate_location(JLConstants.Conical50,"conical_10")
+conical50_11=generate_location(JLConstants.Conical50,"conical_11")
+conical50_12=generate_location(JLConstants.Conical50,"conical_12")
+
+conicals= [conical50_1,conical50_2,conical50_3,conical50_4,conical50_5,conical50_6,conical50_7,conical50_8,conical50_9,conical50_10]
+
+
+rm(db_file)
+
+chems  = Dict(
+    chem"ampicillin" => 1u"mg",
+    chem"sucrose" => 2.5u"mg",
+    chem"chloramphenicol" => 3u"mg",
+    chem"acid_red_1"=> 1u"µg",
+    chem"alanine"=> 50u"µg"
+)
+
+orgs = [
+    org"SMU_UA159",
+    org"SSA_SK36"
+]
+
+
+cdm_2x = 2/5 * cdm_glucose_500mL - 100u"mL" * chem"water"  # 2x cdm with glucose 
+
+for child in children(reservior)
+    child.stock = 2/5 * cdm_glucose_500mL - 100u"mL" * chem"water"  # 2x cdm with glucose 
 end 
 
-function str(name; strs=strains)
-    return strs[findfirst(x->x.name==name,strs)]
-end 
-# define stocks 
-water=JLIMS.Stock(
-    JLIMS.Composition(Dict(
-        ing("water")=> 100u"percent"
-    )),
-    50u"mL",
-    JLIMS.Well(1,1,1,conical_50)
-)
-alanine=JLIMS.Stock(
-    JLIMS.Composition(Dict(
-        ing("water")=> 100u"percent",
-        ing("alanine")=>10u"g/L"
-    )),
-    50u"mL",
-    JLIMS.Well(2,2,1,conical_50)
-)
 
-arginine=JLIMS.Stock(
-    JLIMS.Composition(Dict(
-        ing("water")=> 100u"percent",
-        ing("arginine")=>10u"g/L"
-    )),
-    50u"mL",
-    JLIMS.Well(3,3,1,conical_50)
-)
-
-asparagine=JLIMS.Stock(
-    JLIMS.Composition(Dict(
-        ing("water")=> 100u"percent",
-        ing("asparagine")=>10u"g/L"
-    )),
-    50u"mL",
-    JLIMS.Well(4,4,1,conical_50)
-)
-
-aspartic_acid=JLIMS.Stock(
-    JLIMS.Composition(Dict(
-        ing("water")=> 100u"percent",
-        ing("aspartic_acid")=>5u"g/L",
-        ing("hydrochloric_acid")=>0.2u"M"
-    )),
-    50u"mL",
-    JLIMS.Well(5,5,1,conical_50)
-)
-
-glutamine=JLIMS.Stock(
-    JLIMS.Composition(Dict(
-        ing("water")=> 100u"percent",
-        ing("glutamine")=>20u"g/L"
-    )),
-    50u"mL",
-    JLIMS.Well(6,6,1,conical_50)
-)
-
-glutamic_acid=JLIMS.Stock(
-    JLIMS.Composition(Dict(
-        ing("water")=> 100u"percent",
-        ing("glutamic_acid")=>5u"g/L",
-        ing("hydrochloric_acid")=>0.2u"M"
-    )),
-    50u"mL",
-    JLIMS.Well(7,7,1,conical_50)
-)
-
-glycine=JLIMS.Stock(
-    JLIMS.Composition(Dict(
-        ing("water")=> 100u"percent",
-        ing("glycine")=>10u"g/L"
-    )),
-    50u"mL",
-    JLIMS.Well(8,8,1,conical_50)
-)
-
-histidine=JLIMS.Stock(
-    JLIMS.Composition(Dict(
-        ing("water")=> 100u"percent",
-        ing("histidine")=>10u"g/L"
-    )),
-    50u"mL",
-    JLIMS.Well(9,9,1,conical_50)
-)
-
-isoleucine=JLIMS.Stock(
-    JLIMS.Composition(Dict(
-        ing("water")=> 100u"percent",
-        ing("isoleucine")=>10u"g/L"
-    )),
-    50u"mL",
-    JLIMS.Well(10,10,1,conical_50)
-)
-
-leucine=JLIMS.Stock(
-    JLIMS.Composition(Dict(
-        ing("water")=> 100u"percent",
-        ing("leucine")=>10u"g/L"
-    )),
-    50u"mL",
-    JLIMS.Well(11,11,1,conical_50)
-)
-
-lysine=JLIMS.Stock(
-    JLIMS.Composition(Dict(
-        ing("water")=> 100u"percent",
-        ing("lysine")=>10u"g/L"
-    )),
-    50u"mL",
-    JLIMS.Well(12,12,1,conical_50)
-)
-
-methionine=JLIMS.Stock(
-    JLIMS.Composition(Dict(
-        ing("water")=> 100u"percent",
-        ing("methionine")=>10u"g/L"
-    )),
-    50u"mL",
-    JLIMS.Well(13,13,1,conical_50)
-)
-
-phenylalanine=JLIMS.Stock(
-    JLIMS.Composition(Dict(
-        ing("water")=> 100u"percent",
-        ing("phenylalanine")=>10u"g/L",
-        ing("hydrochloric_acid")=>0.2u"M"
-    )),
-    50u"mL",
-    JLIMS.Well(14,14,1,conical_50)
-)
-proline=JLIMS.Stock(
-    JLIMS.Composition(Dict(
-        ing("water")=> 100u"percent",
-        ing("proline")=>10u"g/L"
-    )),
-    50u"mL",
-    JLIMS.Well(15,15,1,conical_50)
-)
-serine=JLIMS.Stock(
-    JLIMS.Composition(Dict(
-        ing("water")=> 100u"percent",
-        ing("serine")=>10u"g/L"
-    )),
-    50u"mL",
-    JLIMS.Well(16,16,1,conical_50)
-)
-
-threonine=JLIMS.Stock(
-    JLIMS.Composition(Dict(
-        ing("water")=> 100u"percent",
-        ing("threonine")=>20u"g/L"
-    )),
-    50u"mL",
-    JLIMS.Well(17,17,1,conical_50)
-)
-tryptophan=JLIMS.Stock(
-    JLIMS.Composition(Dict(
-        ing("water")=> 100u"percent",
-        ing("tryptophan")=>10u"g/L",
-        ing("hydrochloric_acid")=>0.2u"M"
-    )),
-    50u"mL",
-    JLIMS.Well(18,18,1,conical_50)
-)
-
-tyrosine=JLIMS.Stock(
-    JLIMS.Composition(Dict(
-        ing("water")=> 100u"percent",
-        ing("tyrosine")=>10u"g/L",
-        ing("hydrochloric_acid")=>0.2u"M"
-    )),
-    50u"mL",
-    JLIMS.Well(19,19,1,conical_50)
-)
-
-valine=JLIMS.Stock(
-    JLIMS.Composition(Dict(
-        ing("water")=> 100u"percent",
-        ing("valine")=>10u"g/L"
-    )),
-    50u"mL",
-    JLIMS.Well(20,20,1,conical_50)
-)
-
-cysteine=JLIMS.Stock(
-    JLIMS.Composition(Dict(
-        ing("water")=> 100u"percent",
-        ing("l_cysteine")=>10u"g/L"
-    )),
-    50u"mL",
-    JLIMS.Well(21,21,1,conical_50)
-)
-
-cdm_2x_glucose1=JLIMS.Stock(
-    JLIMS.Composition(Dict(
-        ing("adenine")=>0.04u"g/L",
-        ing("biotin")=> 0.0004u"g/L",
-        ing("glucose")=>20u"g/L",
-        ing("folic_acid")=>0.0016u"g/L",
-        ing("guanine")=>0.04u"g/L",
-        ing("iron_sulfate")=>0.01u"g/L",
-        ing("iron_nitrate")=>0.002u"g/L",
-        ing("magnesium_sulfate")=>1.4u"g/L",
-        ing("manganese_sulfate")=>0.01u"g/L",
-        ing("b_nadph")=>0.005u"g/L",
-        ing("niacinamide")=>0.002u"g/L",
-        ing("paba")=>0.0004u"g/L",
-        ing("pantothenate")=>0.004u"g/L",
-        ing("pyridoxal_hydrochloride")=>0.002u"g/L",
-        ing("pyridoxamine")=>0.002u"g/L",
-        ing("riboflavin")=>0.004u"g/L",
-        ing("sodium_acetate")=>9u"g/L",
-        ing("thiamine")=>0.002u"g/L",
-        ing("uracil")=>0.04u"g/L",
-        ing("vitamin_b12")=>0.0002u"g/L",
-        ing("water")=>100u"percent"
-    )),
-    50u"mL",
-    JLIMS.Well(22,22,1,conical_50)
-)
-
-
-
-
-
-smu= Culture(
-    str("SMU_UA159"),
-    JLIMS.Stock(
-    JLIMS.Composition(Dict(
-        ing("water")=>100u"percent"
-    )),
-    50u"mL",
-    JLIMS.Well(23,23,1,conical_50)
-))
-
-ssa= Culture(
-    str("SSA_SK36"),
-    JLIMS.Stock(
-    JLIMS.Composition(Dict(
-        ing("water")=>100u"percent"
-    )),
-    50u"mL",
-    JLIMS.Well(24,24,1,conical_50)
-))
-
-
-cdm_2x_glucose2=JLIMS.Stock(
-    JLIMS.Composition(Dict(
-        ing("adenine")=>0.04u"g/L",
-        ing("biotin")=> 0.0004u"g/L",
-        ing("glucose")=>20u"g/L",
-        ing("folic_acid")=>0.0016u"g/L",
-        ing("guanine")=>0.04u"g/L",
-        ing("iron_sulfate")=>0.01u"g/L",
-        ing("iron_nitrate")=>0.002u"g/L",
-        ing("magnesium_sulfate")=>1.4u"g/L",
-        ing("manganese_sulfate")=>0.01u"g/L",
-        ing("b_nadph")=>0.005u"g/L",
-        ing("niacinamide")=>0.002u"g/L",
-        ing("paba")=>0.0004u"g/L",
-        ing("pantothenate")=>0.004u"g/L",
-        ing("pyridoxal_hydrochloride")=>0.002u"g/L",
-        ing("pyridoxamine")=>0.002u"g/L",
-        ing("riboflavin")=>0.004u"g/L",
-        ing("sodium_acetate")=>9u"g/L",
-        ing("thiamine")=>0.002u"g/L",
-        ing("uracil")=>0.04u"g/L",
-        ing("vitamin_b12")=>0.0002u"g/L",
-        ing("water")=>100u"percent"
-    )),
-    250u"mL",
-    JLIMS.Well(24,24,1,bottle_250)
-)
-
-aas=[water,alanine,arginine,asparagine,aspartic_acid,glutamine,glutamic_acid,glycine,histidine,isoleucine,leucine,lysine,methionine,phenylalanine,proline,serine,threonine,tryptophan,tyrosine,valine,cysteine]
-
-well=24
-plate=25 
-dwp_stocks=JLIMS.Stock[]
-
-for i in 1:96
-    aa_stocks=repeat(aas,outer=5)
-    st=JLIMS.Stock(JLIMS.Empty(),missing,JLIMS.Well(well+i,plate,i,dwp96_2ml))
-    out_donor,out_rec=JLIMS.transfer(aa_stocks[i],st,2u"ml")
-    push!(dwp_stocks,out_rec)
+for child in children(conical50_1)
+    child.stock = 50u"mL" * chem"water" 
 end 
 
-plate=26 
-well=24+96
+for child in children(conical50_2)
+    child.stock = 50u"mL" * chem"water" 
+end 
 
+for child in children(conical50_3)
+    child.stock = 0.5u"g" * chem"ampicillin" + 40u"mL"* chem"water" + 10u"mL" * chem"ethanol" 
+end
 
-plate_stocks=JLIMS.Stock[]
-for i in 1:96 
-    st=JLIMS.Stock(JLIMS.Empty(),missing,JLIMS.Well(well+i,plate,i,WP96))
-    don,st1=JLIMS.transfer(water,st,40u"µL")
-    don,st1=JLIMS.transfer(cdm_2x_glucose2,st1,100u"µL")
-    for j in 2:length(aas)
-        if mod(i,j) == 0 
-            continue
-        else 
-            don,st1=JLIMS.transfer(aas[j],st1,2u"µL")
-        end 
+for child in children(conical50_4)
+    child.stock = 3u"g" * chem"sucrose" + 10u"mL" * chem"water" 
+end 
+
+for child in children(conical50_5)
+    child.stock = 0.05u"g" * chem"chloramphenicol" + 20u"mL" * chem"water"
+end 
+
+for child in children(conical50_6) 
+    child.stock = 0.5u"g" * chem"chloramphenicol" + 30u"mL" * chem"ethanol" + 20u"mL" * chem"water" 
+end 
+
+for child in children(conical50_7)
+    child.stock = 0.001u"g" * chem"acid_red_1" + 25u"mL" * chem"water" 
+end 
+
+for child in children(conical50_8)
+    child.stock = 0.5u"g" * chem"alanine" + 50u"mL" * chem"water" 
+end 
+
+for child in children(conical50_9)
+    child.stock = org"SMU_UA159" + 100u"mL"* chem"water" 
+end 
+
+for child in children(conical50_10)
+    child.stock = org"SSA_SK36" + 100u"mL" * chem"water" 
+end 
+
+for child in children(wp96)
+    child.stock = 1/1000 * cdm_2x  + 100u"µL" * chem"water"
+    n = rand(1:4)
+    for _ in 1:n
+        chemical = rand(keys(chems))
+        val=rand(0:0.1:1)
+        child.stock = val*chems[chemical]*chemical
+    end
+    porg =0.8 
+    if rand() < porg 
+        org = rand(vcat(orgs,))
+        child.stock += org 
     end 
-    push!(plate_stocks,st1)
-end 
-cultures=JLIMS.Culture[]
-for i in 1:96
-    if mod(i,12)==0 
-        don,cul1=transfer(water,plate_stocks[i],2u"µL")
-        push!(cultures,cul1)
-    else
-        don,st1=transfer(smu,plate_stocks[i],2u"µL")
-        push!(cultures,st1)
-    end 
-end 
+end
 
+    
 
 
 

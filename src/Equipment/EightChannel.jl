@@ -3,12 +3,12 @@ const p100_nozzle = ContinuousNozzle(10u"µL",100u"µL",100u"µL",0u"µL",1,fals
 const p10_nozzle = ContinuousNozzle(1u"µL",10u"µL",10u"µL",0u"µL",1,false)
 
 struct EightChannelHead <: FixedTransferHead 
-    nozzles::Vector{Nozzle}
+    channels::AbstractArray{Nozzle}
 end 
 
-const p1000_multichannel_head =EightChannelHead(fill(p1000_nozzle,8))
-const p100_multichannel_head = EightChannelHead(fill(p100_nozzle,8))
-const p10_multichannel_head = EightChannelHead(fill(p10_nozzle,8))
+const p1000_multichannel_head =EightChannelHead(fill(p1000_nozzle,1))
+const p100_multichannel_head = EightChannelHead(fill(p100_nozzle,1))
+const p10_multichannel_head = EightChannelHead(fill(p10_nozzle,1))
 
 struct EightChannelSettings <: InstrumentSettings 
 end 
@@ -43,7 +43,7 @@ end
 
 function masks(h::EightChannelHead,l::JLConstants.WellPlate) # for generic 96 well plates, we will define a separate method for 384 well plates 
     C= 1
-    Wi,Wj=shape(l)
+    Wi,Wj=JLIMS.shape(l)
     Pi,Pj = 1,Wj
     W = falses(Wi,Wj)
     P=falses(Pi,Pj)
@@ -63,7 +63,7 @@ end
 
 function masks(h::EightChannelHead,l::JLConstants.WP384) 
     C= 1
-    Wi,Wj=shape(l)
+    Wi,Wj=JLIMS.shape(l)
     Pi,Pj = 2,Wj
     W = falses(Wi,Wj)
     P=falses(Pi,Pj)

@@ -17,13 +17,13 @@ const p10_nozzle = ContinuousNozzle(1u"µL",10u"µL",10u"µL",0u"µL",1,false)
 
 
 struct SingleChannelHead <: FixedTransferHead
-    nozzles::Nozzle
+    channels::AbstractArray{Nozzle}
 end 
 
-const p1000_head =SingleChannelHead(p1000_nozzle)
-const p200_head =SingleChannelHead(p200_nozzle)
-const p20_head =SingleChannelHead(p20_nozzle)
-const p2_head =SingleChannelHead(p2_nozzle)
+const p1000_head =SingleChannelHead([p1000_nozzle])
+const p200_head =SingleChannelHead([p200_nozzle])
+const p20_head =SingleChannelHead([p20_nozzle])
+const p2_head =SingleChannelHead([p2_nozzle])
 
 
 
@@ -51,8 +51,8 @@ const p2 = SingleChannelConfiguration("P-2",p2_head,single_channel_deck,single_c
 
 function masks(h::SingleChannelHead,l::JLIMS.Labware)
     C= 1
-    Wi,Wj=shape(l)
-    Pi,Pj =shape(l)
+    Wi,Wj=JLIMS.shape(l)
+    Pi,Pj =JLIMS.shape(l)
     W = falses(Wi,Wj)
     P=falses(Pi,Pj)
     S = (Pi*Pj,C)

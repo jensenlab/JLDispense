@@ -1,11 +1,20 @@
-using JLDispense, JLIMS, JLConstants , Unitful, Plots 
+using JLDispense, JLIMS, JLConstants , Unitful, Plots , SQLite,DataFrames
+init_file= "init_tests.jl"
+
+include(init_file)
 
 
-x=[Conical50(1,"conical1"),Conical50(1,"conical2"),Conical50(1,"conical3"),WP96(1,"plate1")]
 
 
-JLDispense.can_place(x[1],JLDispense.tuberack50mL_0001)
 
-y=JLDispense.slotting_greedy(x,JLDispense.nimbus)
+tgt_wells= vec(children(wp96))
 
-plot(y,JLDispense.nimbus)
+src_wells = vcat(map(x->vec(children(x)),conicals)...)
+
+src_wells=vcat(src_wells,children(reservior)[1])
+
+instruments =[JLDispense.p20,JLDispense.p2,JLDispense.platemaster]
+ins= [JLDispense.p2]
+out = JLDispense.dispense_solver(src_wells,tgt_wells,instruments)
+
+show(out)

@@ -1,5 +1,5 @@
 preferred_quantity_unit(ing::JLIMS.Solid) =u"mg"
-preferred_quantit_unit(ing::JLIMS.Liquid) = u"µL"
+preferred_quantity_unit(ing::JLIMS.Liquid) = u"µL"
 
 
 preferred_quantity_unit(stock::JLIMS.Stock)= u"µL"
@@ -26,7 +26,7 @@ Return the concentration of an ingredient in a stock using the preferred units f
 """
 function concentration(stock::JLIMS.Stock,ingredient::JLIMS.Chemical) 
     if ingredient in stock 
-        return uconvert(preferred_quantity_unit(ingredient)/preferred_quantity_unit(stock),(chemical_access_dict[typeof(ingredient)])(stock)[ingredient]/quantity(stock))
+        return uconvert(preferred_quantity_unit(ingredient)/preferred_quantity_unit(stock),(chemical_access_dict[typeof(ingredient)])(stock)[ingredient]/JLIMS.quantity(stock))
     else
         return 0*preferred_quantity_unit(ingredient)/preferred_quantity_unit(stock)
     end 
@@ -41,7 +41,7 @@ Return the quantity of an ingredient in a stock using the preferred units for th
 
 """
 function quantity(stock::JLIMS.Stock,ingredient::JLIMS.Chemical)
-    if ingredient in ingredients(stock.composition)
+    if ingredient in stock
         return uconvert(preferred_quantity_unit(ingredient),(chemical_access_dict[typeof(ingredient)])(stock)[ingredient])
     else
         return 0*preferred_quantity_unit(ingredient)
@@ -49,7 +49,7 @@ function quantity(stock::JLIMS.Stock,ingredient::JLIMS.Chemical)
 end 
 
 
-function chemical_array(stocks::Vector{<:JLIMS.Stock},ingredients::Set{<:JLIMS.Chemical};measure::Function=concentration) # can return concentration or quantity 
+function chemical_array(stocks::Vector{<:JLIMS.Stock},ingredients::Vector{<:JLIMS.Chemical};measure::Function=concentration) # can return concentration or quantity 
     out=DataFrame()
         for i in ingredients 
             vals=Any[]
@@ -68,16 +68,17 @@ end
 function organism_array(stocks::Vector{<:JLIMS.Stock},orgs::Vector{JLIMS.Organism})
     pairs=Iterators.product(orgs,stocks) |> collect 
     out = Base.splat(in).(pairs)
-    return out' # output expected bo be cultures by strains instead of strains by cultures
+
+    return DataFrame(out',JLIMS.name.(orgs)) # output expected bo be cultures by strains instead of strains by cultures
 end  
 
 
 
 
-function get_all_labware(sources::Vector{JLIMS.Well},targets::Vector{JLIMS.Well})
+function get_all_labware(sources::Vector{<:JLIMS.Well},targets::Vector{<:JLIMS.Well})
 
-    all(map(x-> !isnothing(x),JLIMS.parent(sources))) || ArgumentError("all source wells must have a searchable parent")
-    all(map(x-> !isnothing(x),JLIMS.parent(targets))) || ArgumentError("all target wells must have a searchable parent")
+    all(map(x-> !isnothing(x),JLIMS.parent.(sources))) || ArgumentError("all source wells must have a searchable parent")
+    all(map(x-> !isnothing(x),JLIMS.parent.(targets))) || ArgumentError("all target wells must have a searchable parent")
 
     all_labware = unique(vcat(JLIMS.parent.(sources),JLIMS.parent.(targets)))
 
@@ -87,17 +88,17 @@ end
 
 function get_all_chemicals(source::JLIMS.Stock)
          # Gather all ingredients contained in the sources, destinations, and priority list 
-         solids = chemicals(solids(source))
-         liqs = chemicals(liquids(source))
-         return Set(union(solids,liqs))
+         solids = chemicals(JLIMS.solids(source))
+         liqs = chemicals(JLIMS.liquids(source))
+         return collect(union(solids,liqs))
 end 
 
 function get_all_chemicals(sources::Vector{<:JLIMS.Stock})
-    return union(get_all_chemicals.(sources)...)
+    return collect(union(get_all_chemicals.(sources)...))
 end 
 
 function get_all_chemicals(priority::PriorityDict)
-    return Set(keys(priority))
+    return collect((keys(priority)))
 end 
 
 function get_all_chemicals(sources::Vector{<:JLIMS.Stock},targets::Vector{<:JLIMS.Stock},priority::PriorityDict)
@@ -105,30 +106,32 @@ function get_all_chemicals(sources::Vector{<:JLIMS.Stock},targets::Vector{<:JLIM
 end 
 
 
-get_all_organisms(x::JLIMS.Stock) = JLIMS.organisms(x) 
+get_all_organisms(x::JLIMS.Stock) = collect(JLIMS.organisms(x))
 
 function get_all_organisms(sources::Vector{<:JLIMS.Stock})
-    return union(get_all_organisms.(sources)...)
+    return collect(union(get_all_organisms.(sources)...))
 end 
 
 function get_all_organisms(sources::Vector{<:JLIMS.Stock},targets::Vector{<:JLIMS.Stock})
-    return union(get_all_organisms(sources),get_all_organisms(targets))
+    return collect(union(get_all_organisms(sources),get_all_organisms(targets)))
 end 
 
 
 
-function slot_stocks(sources::Vector{JLIMS.Well},targets::Vector{JLIMS.Well})
+function slot_stocks(sources::Vector{<:JLIMS.Well},targets::Vector{<:JLIMS.Well})
     all_labware=get_all_labware(sources,targets)
-    N= sum([prod(shape(l)...) for l in all_labware])
+    N= sum(map(x->prod(JLIMS.shape(x)),all_labware))
     src_stocks= JLIMS.Stock[]
     src_enforced=Bool[]
     tgt_stocks=JLIMS.Stock[]
     tgt_enforced=Bool[]
+    tgt_caps = Real[]
     src_ids = JLIMS.location_id.(sources)
     tgt_ids=JLIMS.location_id.(targets)
     for l in all_labware 
         for c in children(l)
             id = location_id(c)
+            push!(tgt_caps, ustrip(uconvert(u"µL",JLIMS.wellcapacity(c))))
             x=findfirst(y->y==id,src_ids)
             if isnothing(x) 
                 push!(src_stocks,JLIMS.Empty())
@@ -147,14 +150,14 @@ function slot_stocks(sources::Vector{JLIMS.Well},targets::Vector{JLIMS.Well})
             end 
         end 
     end 
-    return src_stocks,tgt_stocks,src_enforced,tgt_enforced
+    return src_stocks,tgt_stocks,src_enforced,tgt_enforced,tgt_caps
 end
 
 
 
-function update_priority!(sources::Vector{JLIMS.Well},targets::Vector{JLIMS.Well},priority::PriorityDict)
-    src_chems= all_chemicals(sources)
-    tgt_chems = all_chemicals(targets) 
+function update_priority!(sources::Vector{<:JLIMS.Well},targets::Vector{<:JLIMS.Well},priority::PriorityDict)
+    src_chems= get_all_chemicals(stock.(sources))
+    tgt_chems = get_all_chemicals(stock.(targets)) 
         # Update priorities: priority increases with decreasing level
 
     # Level 0: All level 0 ingredeients are blocked from the design. They may not appear in the stock. 
@@ -175,18 +178,18 @@ function update_priority!(sources::Vector{JLIMS.Well},targets::Vector{JLIMS.Well
 end 
 
 
-function pad(tf::TransferHead)
-    pads::Vector{Real}[]
-    for n in nozzles(tf)
+function pads(tf::TransferHead)
+    pads=Real[]
+    for n in channels(tf)
       push!(pads,n.deadVolFactor)
     end 
     return pads 
   end 
   
   function deadvols(tf::TransferHead)
-    vols::Vector{Real}[]
-    for n in nozzles(tf)
-        v=ustrip(uconvert(u"µL"),n.deadVol)
+    vols=Real[]
+    for n in channels(tf)
+        v=ustrip(uconvert(u"µL",n.deadVol))
         push!(vols,v)
     end
     return vols 

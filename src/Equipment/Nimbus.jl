@@ -17,8 +17,8 @@ const nimbus_nozzle= ContinuousNozzle(50u"µL",1000u"µL",1000u"µL",25u"µL",1,
 abstract type NimbusHead <: TransferHead end 
 
 struct NimbusSingleChannelHead <: NimbusHead 
-    nozzles::Nozzle
-    NimbusSingleChannelHead()=new(nimbus_nozzle)
+    channels::AbstractArray{Nozzle}
+    NimbusSingleChannelHead()=new([nimbus_nozzle])
 end 
 
 
@@ -54,7 +54,7 @@ const nimbus = NimbusConfiguration("Nimbus",NimbusSingleChannelHead(),nimbus_dec
 
 function masks(h::NimbusSingleChannelHead,l::Labware)
     C= 1
-    Wi,Wj=shape(l)
+    Wi,Wj=JLIMS.shape(l)
     Pi,Pj = 1,1
     W = falses(Wi,Wj)
     P=falses(Pi,Pj)
@@ -104,7 +104,7 @@ function convert_design(design::DataFrame,labware::Vector{<:Labware}, slotting::
             if length(source) ==1 
                 push!(source_position,s_pos)
             else
-                r,c = cartesian(falses(shape(source)...),col)
+                r,c = cartesian(falses(JLIMS.shape(source)...),col)
                 pos=string(alphabet[r],c)
                 push!(source_position,pos)
             end 
@@ -115,7 +115,7 @@ function convert_design(design::DataFrame,labware::Vector{<:Labware}, slotting::
             if length(destination) == 1 
                 push!(destination_position,d_pos)
             else
-                r,c = cartesian(falses(shape(destination)...),row)
+                r,c = cartesian(falses(JLIMS.shape(destination)...),row)
                 pos=string(alphabet[r],c)
                 push!(destination_position,pos)
             end 

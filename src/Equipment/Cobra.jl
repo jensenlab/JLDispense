@@ -34,7 +34,7 @@ end
 
 
 struct CobraHead <: TransferHead
-  nozzles::AbstractArray{Nozzle}
+  channels::AbstractArray{Nozzle}
 end 
 
 
@@ -66,8 +66,8 @@ liquidclass(::JLIMS.Stock) = "Water"
 # define masks 
 
 function masks(h::CobraHead,l::JLConstants.WellPlate) # for generic 96 well plates, we will define a separate method for 384 well plates 
-  C= length(nozzles(h))
-  Wi,Wj=shape(l)
+  C= length(channels(h))
+  Wi,Wj=JLIMS.shape(l)
   Pi,Pj = 5,12
   W = falses(Wi,Wj)
   P=falses(Pi,Pj)
@@ -81,8 +81,8 @@ function masks(h::CobraHead,l::JLConstants.WellPlate) # for generic 96 well plat
       pm,pn=cartesian(P,p)
       return wi == c+pm-1 && wj == pn 
   end 
-  C= length(nozzles(h))
-  Wi,Wj=shape(l)
+  C= length(channels(h))
+  Wi,Wj=JLIMS.shape(l)
   Pi,Pj = 11,12
   W = falses(Wi,Wj)
   P=falses(Pi,Pj)
@@ -99,8 +99,8 @@ function masks(h::CobraHead,l::JLConstants.WellPlate) # for generic 96 well plat
   return Ma,Md,Sa,Sd
 end
 function masks(h::CobraHead,l::JLConstants.WP384) 
-  C= length(nozzles(h))
-  Wi,Wj=shape(l)
+  C= length(channels(h))
+  Wi,Wj=JLIMS.shape(l)
   Pi,Pj = 10,12
   W = falses(Wi,Wj)
   P=falses(Pi,Pj)
@@ -114,8 +114,8 @@ function masks(h::CobraHead,l::JLConstants.WP384)
       pm,pn=cartesian(P,p)
       return wi == 2*(c-1)+pm && wj == pn 
   end 
-  C= length(nozzles(h))
-  Wi,Wj=shape(l)
+  C= length(channels(h))
+  Wi,Wj=JLIMS.shape(l)
   Pi,Pj = 22,12
   W = falses(Wi,Wj)
   P=falses(Pi,Pj)
@@ -521,9 +521,9 @@ function design2protocols(directory::AbstractString,design::DataFrame,source::JL
   cobra_location=settings(config).cobra_path
   # Check for issues with the design
 
-    r_in,c_in=shape(source)
+    r_in,c_in=JLIMS.shape(source)
     n_in=r_in*c_in
-    r_out,c_out=shape(destination)
+    r_out,c_out=JLIMS.shape(destination)
     n_out=r_out*c_out
     des=Matrix(design)
     r,c=size(des)

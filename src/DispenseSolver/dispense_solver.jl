@@ -31,44 +31,132 @@ struct MixingError <:Exception
 
 
 
-function dispense_solver(sources::Vector{Well},targets::Vector{Well},configurations::Vector{<:Configuration};quiet::Bool=true,timelimit::Real=10,pad::Real=1.25,slack_tolerance::Real=0,overdraft_tolerance::Real=1e-8,require_nonzero::Bool=true,return_model::Bool=false,obj_tolerance=1e-2,obj_cutoff=1e-3,inoculation_quantity::Real=2, priority::Dict{JLIMS.Chemical,UInt64}=Dict{JLIMS.Chemical,UInt64}(),kwargs...) 
+function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configurations::Vector{<:Configuration};quiet::Bool=true,timelimit::Real=10,pad::Real=1.25,slack_tolerance::Real=0,overdraft_tolerance::Real=1e-8,require_nonzero::Bool=false,return_model::Bool=false,obj_tolerance=1e-2,obj_cutoff=1e-3,inoculation_quantity::Real=2, priority::Dict{JLIMS.Chemical,UInt64}=Dict{JLIMS.Chemical,UInt64}(),kwargs...) 
 
         all_labware = get_all_labware(sources,targets)
 
-        all_chemicals =get_all_chemicals(sources,targets,priority) 
+        all_chemicals =get_all_chemicals(stock.(sources),stock.(targets),priority) 
 
-        all_organisms = get_all_organisms(sources,targets) 
+        all_organisms = get_all_organisms(stock.(sources),stock.(targets)) 
 
-        src_stocks, tgt_stocks, s_enforced,t_enforced= slot_stocks(sources,targets)
+        src_stocks, tgt_stocks, s_enforced,t_enforced,tgt_caps = slot_stocks(sources,targets)
 
-        src_quantities =ustrip.(map(x->uconvert(preferred_quantity(x),JLIMS.quantity(x)),src_stocks))
+        src_quantities =ustrip.(map(x->uconvert(preferred_quantity_unit(x),JLIMS.quantity(x)),src_stocks))
 
         configs = vcat(configurations,null_robot) # add in the null robot to handle the "hidden" transfers that go directly from a well to itself
         
         # Create the concentration array for the sources and the target quantity array for the destinations
-        source_concentrations=chemical_array(src_stocks,all_ingredients) 
+        source_concentrations=chemical_array(src_stocks,all_chemicals) 
         sc = Float64.(Matrix(Unitful.ustrip.(source_concentrations)))
-        so = strain_array(src_stocks,all_organisms)
+        source_organisms = organism_array(src_stocks,all_organisms)
+        so = Matrix(source_organisms)
         #create the target array for the destinations 
-        target_quantities=chemical_array(destinations,all_ingredients;measure=quantity)
+        target_quantities=chemical_array(tgt_stocks,all_chemicals;measure=quantity)
         tq = Float64.(Matrix(Unitful.ustrip.(target_quantities)))
-        to = strain_array(tgt_stocks,all_organisms)
-
+        target_organisms = organism_array(tgt_stocks,all_organisms)
+        to= Matrix(target_organisms)
  
-        # check for missing source ingredients needed to complete the destinations
-        missing_chemicals=filter(x-> sum(Unitful.ustrip.(source_concentrations[:,Symbol(x.name)]))==0,get_all_chemicals(targets))       
+        # check for missing source chemicals needed to complete the destinations
+        missing_chemicals=filter(x-> sum(Unitful.ustrip.(source_concentrations[:,Symbol(x.name)]))==0,get_all_chemicals(stock.(targets)))       
         if length(missing_chemicals) > 0 
                 throw(MissingChemicalError("No valid source of $(join(name.(missing_chemicals),", ")) available to complete the dispenses",missing_chemicals))
         end 
 
         # check for missing source organisms needed to create the targets 
-        missing_organisms = filter(x-> sum(so[:,Symbol(JLIMS.name(x))])==0,get_all_organsims(targets))
+        missing_organisms = filter(x-> sum(source_organisms[:,Symbol(JLIMS.name(x))])==0,get_all_organisms(stock.(targets)))
         if length(missing_organisms)>0 
                 throw(MissingOrgansimError("No valid source of $(join(name.(missing_organisms),", ")) available to complete the dispenses",missing_organisms))
         end
 
         # update the chemical priority dict to account for the sources and targets 
         update_priority!(sources,targets,priority)
+
+        W = length(src_stocks) # number of total wells in the model
+        C = length(all_chemicals)
+        O = length(all_organisms)
+        L = length(all_labware)
+        R = length(configs)
+
+
+        Ma,Md,Sa,Sd = get_masks(configs,all_labware)
+        lw_idx = vcat([fill(i,length(all_labware[i])) for i in 1:L]...)
+        within_labware_index = vcat([1:length(all_labware[i]) for i in 1:L]...)
+
+        MDict = Dict{Tuple{Int,Int,Int,Int},Int}()
+        NDict = Dict{Tuple{Int,Int,Int,Int},Int}()
+        m = 1 
+        n=1
+
+        Rm = []
+        Rn = [] 
+        mnozzles = Nozzle[]
+        for r in 1:R 
+                rmstarting= m
+                rnstarting =n
+                for l in 1:L 
+                        Pa,Cha = Sa[r,l]
+                        Pd,Chd = Sd[r,l]
+                        for p in 1:Pa
+                                for c in 1:Cha 
+                                        MDict[(r,l,p,c)]=m 
+                                        m += 1 
+                                        push!(mnozzles,channels(head(configs[r]))[c])
+                                end 
+                        end 
+                        for p in 1:Pd
+                                for c in 1:Chd 
+                                        NDict[(r,l,p,c)]= n 
+                                        n += 1
+                                end 
+                        end 
+                end 
+                rmending = m-1 
+                rnending = n-1
+                push!(Rm,rmstarting:rmending)
+                push!(Rn,rnstarting:rnending)
+
+
+        end 
+        M = length(keys(MDict))
+        N = length(keys(NDict))
+
+
+                        
+
+
+
+        w_to_m = []
+        w_to_n = []
+        for w in 1:W 
+                l = lw_idx[w]
+                i = within_labware_index[w]
+                wm_mapping = Int[]
+                wn_mapping = Int[]
+                for r in 1:R 
+                        
+                        ma = Ma[r,l]
+                        md = Md[r,l]
+                        Pa,Cha = Sa[r,l]
+                        Pd,Chd = Sd[r,l]
+                        for p in 1:Pa 
+                                for c in 1:Cha  
+                                        if ma(i,p,c) 
+                                                push!(wm_mapping,MDict[(r,l,p,c)])
+                                        end
+
+                                end 
+                        end
+                        for p in 1:Pd 
+                                for c in 1:Chd 
+                                        if md(i,p,c)
+                                                push!(wn_mapping,NDict[(r,l,p,c)])
+                                        end 
+                                end 
+                        end  
+                end 
+                push!(w_to_m,wm_mapping)
+                push!(w_to_n,wn_mapping)
+        end
 
 
         ######
@@ -78,67 +166,68 @@ function dispense_solver(sources::Vector{Well},targets::Vector{Well},configurati
         if quiet 
             set_silent(model)
         end 
-        set_attribute(model,"TimeLimit",timelimit)
-        W = length(src_stocks) # number of total wells in the model
-        C = length(all_chemicals)
-        O = length(all_organisms)
-        L = length(all_labware)
-        R = length(configs)
-        lw_product = Iterators.product(all_labware,all_labware) # build a pairwise product of every labware to iterate over 
-        lw_idxs = Iterators.product(1:L,1:L)
+        JuMP.set_attribute(model,"TimeLimit",timelimit)
+
     
         # Define Model variables 
-        @variable(model, Qw[1:W,1:W]>=0) # q(i,j) = quantity of material transferred from well i to well j 
-        @variable(model,Qwa[1:W,1:W]>=0)
-        Q = [@variable(model, [1:length(la),1:length(ld)],lower_bound=0) for (la,ld) in lw_product]
-        Qa = [@variable(model, [1:length(la),1:length(ld)],lower_bound=0) for (la,ld) in lw_product]
+        @variable(model, Q[1:W,1:W]>=0) # q(i,j) = quantity of material transferred from well i to well j 
+        @variable(model, V[1:M,1:N]>=0) # flow decision from m to n 
+        @variable(model, Qa[1:W]>=0)
+        @variable(model, Qd[1:W]>= 0 )
+        @variable(model, PadLoss[1:M,1:R])
         @variable(model,chem_slacks[1:W,1:C])
         @variable(model,org_slacks[1:W,1:O])
-        for (aa,dd) in lw_idxs
-                for (i,j) in CartesianIndices(Q[aa,dd])
-                        @constraint(model,Qw[get_well_index(all_labware,aa,i),get_well_index(all_labware,dd,j)]== Q[aa,dd][i,j] ) # tie the wells segregated by labware to the WxW variable. Having both makes it easier to work with each type when indexing
-                        @constraint(model,Qwa[get_well_index(all_labware,aa,i),get_well_index(all_labware,dd,j)]== Qa[aa,dd][i,j] ) 
-                end
-        end
+
         # constraints to ensure that we create the targets properly
-        @constraint(model, Qw'*sc .- chem_slacks .== tq ) # create the targets with the sources, allowing for some slack. This is a mass/volume balance. 
-        @constraint(model, Qw'*so .- org_slacks .== inoculation_quantity*to) # ensure that if a strain is dispensed, meaure the discrepancy with the strain slack
-        @constraint(model,org_slacks .== 0 ) # organisms must be hit exactly. They trump all other priorities. 
+        @constraint(model, Q'*sc .- chem_slacks .== tq ) # create the targets with the sources, allowing for some slack. This is a mass/volume balance. 
+        @constraint(model, Q'*so .- org_slacks .== inoculation_quantity*to) # ensure that if a strain is dispensed, meaure the discrepancy with the strain slack
+        #@constraint(model,org_slacks .== 0 ) # organisms must be hit exactly. They trump all other priorities. 
     
 
 
         # measure the physical masked operations 
-        Vd = [write_masked_operation_variables(model,c,la,ld,false) for  (la,ld) in lw_product, c in configs] # stores the quantity of material moved from position 
-        Va = [write_masked_operation_variables(model,c,la,ld,true) for  (la,ld) in lw_product, c in configs]
-        e = length(configs)
-        for (aa,dd) in lw_idxs
-                for c in eachindex(configs) 
-                        cha= size(Va[aa,dd,c])[2] # aspirate channel id
-                        for ch in 1:cha
-                        @constraint(model, Va[aa,dd,c][:,ch,:,:] .>= pads(head(c))[ch]* Vd[aa,dd,c][:,ch,:,:] .+ deadvols(head(configs[c]))[ch] ) # add the appropriate padding factor and deadvolume of the aspirating channel to the aspirating volume 
-                        end 
-                end
-                for (i,j) in CartesianIndices(Q[aa,dd])
-                        if i != j 
-                                @constraint(model, sum([sum([masks(head(configs[c]),all_labware[aa])[1](i,pa,cha)*masks(head(configs[c]),all_labware[dd][2](i,pd,chd))*Vd[aa,dd,c][pa,cha,pd,chd] for (pa,cha,pd,chd) in CartesianIndices(Va[aa,dd,c])]) for c in eachindex(configs)[1:end]]) == Q[aa,dd][i,j]) # can use any of the real robots to do transfers
-                                @constraint(model, sum([masks(head(configs[e]),all_labware[aa])[1](i,pa,cha)*masks(head(configs[e]),all_labware[dd][2](i,pd,chd))*Vd[aa,dd,e][pa,cha,pd,chd] for (pa,cha,pd,chd) in CartesianIndices(Va[aa,dd,e])])  == 0) # null robot must not be used 
-                                @constraint(model, sum([sum([masks(head(configs[c]),all_labware[aa])[1](i,pa,cha)*masks(head(configs[c]),all_labware[dd][2](i,pd,chd))*Va[aa,dd,c][pa,cha,pd,chd] for (pa,cha,pd,chd) in CartesianIndices(Va[aa,dd,c])]) for c in eachindex(configs)[1:end]]) == Qa[aa,dd][i,j]) # can use any of the real robots to do transfers
-                                @constraint(model, sum([masks(head(configs[e]),all_labware[aa])[1](i,pa,cha)*masks(head(configs[e]),all_labware[dd][2](i,pd,chd))*Va[aa,dd,e][pa,cha,pd,chd] for (pa,cha,pd,chd) in CartesianIndices(Va[aa,dd,e])])  == 0) # null robot must not be used 
-                                # This expression sums over all robot configurations c in the outer loop, and then sums over all mask position pairs (pa,ca,pd,cd) (p = position ,ch= channel) for the given labware and configuration pairings. 
-                                # Ultimately, this is the constraint that converts masked operations into flows from well to well
-                                # the main calculation is to multiply the aspirate and dispense masks Ma =masks()[1] and Md masks()[2]  by the dispensed volume flow Vd. 
-                                # only flows that pass both masks count, the rest are irrelevant. 
-                        else 
-                                @constraint(model, sum([sum([masks(head(configs[c]),all_labware[aa])[1](i,pa,cha)*masks(head(configs[c]),all_labware[dd][2](i,pd,chd))*Vd[aa,dd,c][pa,cha,pd,chd] for (pa,cha,pd,chd) in CartesianIndices(Va[aa,dd,c])]) for c in eachindex(configs)[1:end-1]]) == 0) # cannot use any of the real robots to do transfers, only the null robot
-                                @constraint(model, sum([masks(head(configs[e]),all_labware[aa])[1](i,pa,cha)*masks(head(configs[e]),all_labware[dd][2](i,pd,chd))*Vd[aa,dd,e][pa,cha,pd,chd] for (pa,cha,pd,chd) in CartesianIndices(Va[aa,dd,e])])  == Q[aa,dd][i,j]) # null robot must pick up all slack 
-                                @constraint(model, sum([sum([masks(head(configs[c]),all_labware[aa])[1](i,pa,cha)*masks(head(configs[c]),all_labware[dd][2](i,pd,chd))*Va[aa,dd,c][pa,cha,pd,chd] for (pa,cha,pd,chd) in CartesianIndices(Va[aa,dd,c])]) for c in eachindex(configs)[1:end-1]]) == 0) # cannot use any of the real robots to do transfers, only the null robot
-                                @constraint(model, sum([masks(head(configs[e]),all_labware[aa])[1](i,pa,cha)*masks(head(configs[e]),all_labware[dd][2](i,pd,chd))*Va[aa,dd,e][pa,cha,pd,chd] for (pa,cha,pd,chd) in CartesianIndices(Va[aa,dd,e])])  == Qa[aa,dd][i,j]) # null robot must pick up all slack 
-                        end 
+        for i in 1:W 
+                for j in 1:W 
+                        idxs = Iterators.product(w_to_m[i],w_to_n[j])
+                        idxs= CartesianIndex.(idxs)
+                        @constraint(model, sum(V[idxs]) == Q[i,j] )
                 end 
- 
         end 
 
+        for i in 1:W 
+                if s_enforced[i]
+                        ms = w_to_m[i]
+                        nozzles = mnozzles[ms]
+                        dead = map(x->ustrip(uconvert(u"µL",x.deadVol)),nozzles)
+                        pad = map(x->x.deadVolFactor,nozzles)
+                        for n in eachindex(nozzles) 
+                                if nozzles[n] isa ContinuousNozzle
+                                        pad[n] = pad[n] + dead[n]/ustrip(uconvert(u"µL",nozzles[n].maxAsp)) # the deadvolume should be a factor of the total aspiration for the flow for a continous nozzle
+                                        dead[n]=0 # because its factored into pad 
+                                
+                                end
+                        end
+                        @constraint(model, sum( pad .* V[ms,:] .+ dead ) <= src_quantities[i]) # aspiration constraints 
+                end
+                if t_enforced[i]
+                        ns = w_to_n[i]
+                        @constraint(model, sum(V[:]) <= tgt_caps[i])
+                end 
+        end 
+
+
+        for ra in 1:R 
+                for rd in 1:R 
+                        if ra != rd 
+                                @constraint(model, V[Rm[ra],Rn[rd]].==0 ) # Flows cant go from one robot to another, they must stay within a particular robot 
+                        end 
+                end 
+        end 
  
+
+
+
+        
         for c in 1:C
                 if priority[all_chemicals[c]] == UInt(0)
                         for d in 1:W
@@ -156,12 +245,12 @@ function dispense_solver(sources::Vector{Well},targets::Vector{Well},configurati
                         end
                 end
                 for c in 1:C
-                sources_with_chemical=sc[:,c] .> 0 
-                for d in 1:W
-                        if tq[d,c] > 0 
-                        @constraint(model,sum( QwI[:,d] .* sources_with_chemical) >= 1  ) # check that at least one transfer happens if an ingredient is needed in a destination, even if the optimial solution is to not dispense anything.  
+                        sources_with_chemical=sc[:,c] .> 0 
+                        for d in 1:W
+                                if tq[d,c] > 0 
+                                        @constraint(model,sum( QwI[:,d] .* sources_with_chemical) >= 1  ) # check that at least one transfer happens if an ingredient is needed in a destination, even if the optimial solution is to not dispense anything.  
+                                end 
                         end 
-                end 
                 end 
         end 
 
@@ -170,6 +259,17 @@ function dispense_solver(sources::Vector{Well},targets::Vector{Well},configurati
 
         ############################################################################################################################################################
 
+        set_objective_sense(model, MOI.FEASIBILITY_SENSE)
+
+        @objective(model, Min , sum(org_slacks.^2)) 
+        optimize!(model) 
+
+        current_slacks=abs.(JuMP.value.(org_slacks))
+                 
+        delta=slack_tolerance * inoculation_quantity*to[:,] # delta is the tolerance we give to updating the slack in higher priority levels, it is some fraction of the dispense target quantity for every destination. Wiggle room for the slack in future iterations 
+        @constraint(model, org_slacks .>= -current_slacks .- delta)
+        @constraint(model, org_slacks .<= current_slacks .+ delta)
+        
         set_objective_sense(model, MOI.FEASIBILITY_SENSE)
         #target_bound=sum((inoculation_quantity*dest_strain_array).^2)
         #set_attribute(model,"Cutoff",obj_cutoff* target_bound) # reject any solutions that are larger than the objective tolerance, which is a percentage of the sum squared target quantities.
@@ -196,8 +296,8 @@ function dispense_solver(sources::Vector{Well},targets::Vector{Well},configurati
 
                 chem_weights= falses(C)
                 for c in 1:C
-                        if priority[all_chemcials[c]] <= level 
-                                chem_weights[i]=true # activate the weight term for this ingredient on this pass
+                        if priority[all_chemicals[c]] <= level 
+                                chem_weights[c]=true # activate the weight term for this ingredient on this pass
                         end 
                 end 
                 weights = target_weights .* chem_weights' 
@@ -250,12 +350,12 @@ function dispense_solver(sources::Vector{Well},targets::Vector{Well},configurati
                 current_slacks=abs.(JuMP.value.(chem_slacks))
                 
                 for c in 1:C
-                if chem_weights[c]
-                        delta=slack_tolerance * tq[:,c] # delta is the tolerance we give to updating the slack in higher priority levels, it is some fraction of the dispense target quantity for every destination. Wiggle room for the slack in future iterations 
-                        current_slack=current_slacks[:,c]
-                        @constraint(model, chem_slacks[:,c] .>= -current_slack .- delta)
-                        @constraint(model, chemslacks[:,c] .<= current_slack .+ delta)
-                end 
+                        if chem_weights[c]
+                                delta=slack_tolerance * tq[:,c] # delta is the tolerance we give to updating the slack in higher priority levels, it is some fraction of the dispense target quantity for every destination. Wiggle room for the slack in future iterations 
+                                current_slack=current_slacks[:,c]
+                                @constraint(model, chem_slacks[:,c] .>= -current_slack .- delta)
+                                @constraint(model, chem_slacks[:,c] .<= current_slack .+ delta)
+                        end 
                 end 
         
                 
@@ -268,9 +368,9 @@ function dispense_solver(sources::Vector{Well},targets::Vector{Well},configurati
         set_objective_sense(model, MOI.FEASIBILITY_SENSE)
 
 
-        @objective(model, Min,sum(sum.(Va))+sum(sum.(Vd))) # minimize total masked operations 
+        @objective(model, Min,sum(V)) # minimize total masked operations 
         optimize!(model)
-
+        #=
         # check for overdrafts 
         qa_quants = JuMP.value.(Qwa)
         quants_needed=sum(Qwa,dims=2) # the total quantity of each source across all robots and destinations.
@@ -286,7 +386,7 @@ function dispense_solver(sources::Vector{Well},targets::Vector{Well},configurati
                 end 
                 throw(OverdraftError("Refills are needed for $(length(collect(keys(overdraft_dict)))) sources:",overdraft_dict))
         end 
-
+        =#
 
         # check for solution optimality 
 
@@ -296,20 +396,20 @@ function dispense_solver(sources::Vector{Well},targets::Vector{Well},configurati
                 slack= c_slacks[d,c]^2 
                 target = tq[d,c]^2 
                 if target == 0 && slack == 0 
-                        sol_quality[d,c]= 0 
+                                sol_quality[d,c]= 0 
                 elseif target == 0 && slack != 0 
-                        error("stock target ($d), chemical $(all_chemcials[c]), unbounded error")
+                                error("stock target ($d), chemical $(all_chemicals[c]), unbounded error")
                 else
-                        sol_quality[d,c]= slack/target 
+                                sol_quality[d,c]= slack/target 
                 end 
         end 
         if max(sol_quality) > obj_tolerance
                 error("unacceptable solution: \n max error = $(max(sol_quality)*100)% \n tolerance limit = $(obj_tolerance*100)%")
         end 
 
+        return model 
 
-
-        dispense_ops = map(x->JumP.value.(x),Vd)
+        dispense_ops = map(x->JumP.value.(x),V)
         slotting_indicators = map(x-> sum(x) > 0, dispense_ops) 
 
         config_dispenses=Matrix{Real}[]
@@ -350,15 +450,30 @@ end
 
 
 function get_well_index(all_labware,lw_index,well_index)
-        start = sum(x->length(x),all_labware[1:(lw_index-1)])
+        start =0 
+        if lw_index > 1 
+
+                start = sum(map(x->length(x),all_labware[1:(lw_index-1)]))
+        end
         return start+well_index
 end 
 
 
 
-function write_masked_operation_variables(model,config,l_asp,l_disp)
+
+
+
+function write_masked_operation_variables!(model,config,l_asp,l_disp)
         a,b,Sa,c=masks(head(config),l_asp) # a,b,c are irrelevant for this function 
         a,b,c,Sd=masks(head(config),l_disp)
         return @variable(model, [1:Sa[1],1:Sa[2],1:Sd[1],1:Sd[2]],lower_bound= 0 ) # all of the positions of the mask for both the aspirate and dispense labware 
 end 
  
+
+function get_masks(configs::Vector{<:Configuration},all_labware::Vector{Labware})
+        
+        M = map(I -> masks(I...),Iterators.product(head.(configs),all_labware))
+
+        Ma,Md,Sa,Sd = map(x->getindex.(M,x),1:4)
+        return Ma,Md,Sa,Sd
+end 

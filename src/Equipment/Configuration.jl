@@ -7,7 +7,7 @@ abstract type FixedTransferHead <: TransferHead end
 
 abstract type AdjustableTransferHead <: TransferHead end 
 
-nozzles(x::TransferHead)=x.nozzles
+channels(x::TransferHead)=x.channels
 
 
 abstract type ReadHead <: Head end 
@@ -104,7 +104,7 @@ end
 
 name(x::DeckPosition) = x.name 
 name(::EmptyPosition)= "" 
-length(x::Labware) = prod(shape(x))
+length(x::Labware) = prod(JLIMS.shape(x))
 
 labware(x::DeckPosition) = x.labware
 slots(x::DeckPosition) = x.slots 

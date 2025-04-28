@@ -15,12 +15,12 @@ const tempest_hv_nozzle = DiscreteNozzle(1u"µL",25u"µL",1.1)
 abstract type TempestHead <: TransferHead end 
 
 struct TempestLVHead <: TempestHead 
-    nozzles::Vector{Nozzle}
+    channels::AbstractArray{Nozzle}
     TempestLVHead() = new(fill(tempest_lv_nozzle,8))
 end 
 
 struct TempestHVHead <: TempestHead 
-    nozzles::Vector{Nozzle}
+    channels::AbstractArray{Nozzle}
     TempestHVHead() = new(fill(tempest_hv_nozzle,8))
 end 
 
@@ -50,7 +50,7 @@ const tempest_hv = TempestConfiguration("Tempest High Volume",TempestHVHead(),te
 
 function masks(h::TempestHead,l::JLConstants.WP96) # for generic 96 well plates, we will define a separate method for 384 well plates 
     C= 8
-    Wi,Wj=shape(l)
+    Wi,Wj=JLIMS.shape(l)
     Pi,Pj = 1,12
     W = falses(Wi,Wj)
     P=falses(Pi,Pj)
@@ -71,7 +71,7 @@ end
 
 function masks(h::TempestHead,l::JLConstants.WP384) # for generic 96 well plates, we will define a separate method for 384 well plates 
     C= 8
-    Wi,Wj=shape(l)
+    Wi,Wj=JLIMS.shape(l)
     Pi,Pj = 2,24
     W = falses(Wi,Wj)
     P=falses(Pi,Pj)
@@ -93,7 +93,7 @@ end
 
 function masks(h::TempestHead,l::Union{JLConstants.Bottle,JLConstants.Tube}) # for generic 96 well plates, we will define a separate method for 384 well plates 
     C= 1
-    Wi,Wj=shape(l)
+    Wi,Wj=JLIMS.shape(l)
     Pi,Pj = 1,1
     W = falses(Wi,Wj)
     P=falses(Pi,Pj)
@@ -170,7 +170,7 @@ function write_tempest_dl(dispenses::DataFrame,labware::Labware, filename::Strin
     print(outfile,join(["Version            :", 6],'\t'),"\r\n")
     print(outfile,join(["Plate type name    :", platefilename],'\t'),"\r\n")
     print(outfile,join(["Priority Delays    :", 0],'\t'),"\r\n")
-    R,C=shape(labware)
+    R,C=JLIMS.shape(labware)
 
     for i in 1:n_stocks 
         vols=Vector(dispenses[:,i])
