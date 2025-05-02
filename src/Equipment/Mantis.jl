@@ -5,15 +5,12 @@
 
 
 #=
-struct Nozzle
+struct DiscreteNozzle <: Nozzle
     minVol::Unitful.Volume
-    maxVol::Unitful.Volume
-    maxAsp::Unitful.Volume 
     deadVol::Unitful.Volume 
     deadVolFactor::Real 
-    is_discrete::Bool
-    multidispense::Bool
-end=#
+end 
+=#
 const mantis_lv_nozzle = DiscreteNozzle(0.1u"µL",10u"µL",1.1)
 const mantis_hv_nozzle = DiscreteNozzle(1u"µL",25u"µL",1.1)
 
@@ -48,6 +45,18 @@ const mantis_hv = MantisConfiguration("Mantis High Volume",MantisHVHead(),mantis
 
 ### define deck access functions 
 
+function plumbing_mask(h::MantisHead)
+    pistons = 1
+    channels = 1
+    function Mp(p::Integer,c::Integer)
+        1 <= p <= pistons || return false 
+        1 <= c <= channels || return false 
+      return p == c 
+    end
+    return Mp ,pistons
+  end 
+  
+
 
 function masks(h::MantisHead,l::JLConstants.WellPlate) # for generic 96 well plates, we will define a separate method for 384 well plates 
     C= 1
@@ -73,7 +82,7 @@ end
 function masks(h::MantisLVHead,l::Union{JLConstants.Conical15,JLConstants.TipReservior}) # for generic 96 well plates, we will define a separate method for 384 well plates 
     C= 1
     Wi,Wj=JLIMS.shape(l)
-    Pi,Pj = 1,1
+    Pi,Pj = JLIMS.shape(l)
     W = falses(Wi,Wj)
     P=falses(Pi,Pj)
     function Ma(w::Integer,p::Integer,c::Integer) # Mantis cannot aspirate from well plates 

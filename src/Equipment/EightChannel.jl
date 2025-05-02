@@ -6,9 +6,9 @@ struct EightChannelHead <: FixedTransferHead
     channels::AbstractArray{Nozzle}
 end 
 
-const p1000_multichannel_head =EightChannelHead(fill(p1000_nozzle,1))
-const p100_multichannel_head = EightChannelHead(fill(p100_nozzle,1))
-const p10_multichannel_head = EightChannelHead(fill(p10_nozzle,1))
+const p1000_multichannel_head =EightChannelHead(fill(p1000_nozzle,8))
+const p100_multichannel_head = EightChannelHead(fill(p100_nozzle,8))
+const p10_multichannel_head = EightChannelHead(fill(p10_nozzle,8))
 
 struct EightChannelSettings <: InstrumentSettings 
 end 
@@ -40,9 +40,20 @@ function can_dispense(h::EightChannelHead,d::EightChannelDeckPosition,l::Labware
 end
 
 
+function plumbing_mask(h::EightChannelHead)
+    pistons = 1
+    channels = 8
+    function Mp(p::Integer,c::Integer)
+        1 <= p <= pistons || return false 
+        1 <= c <= channels || return false 
+      return true
+    end
+    return Mp,pistons
+  end 
+
 
 function masks(h::EightChannelHead,l::JLConstants.WellPlate) # for generic 96 well plates, we will define a separate method for 384 well plates 
-    C= 1
+    C= 8
     Wi,Wj=JLIMS.shape(l)
     Pi,Pj = 1,Wj
     W = falses(Wi,Wj)
@@ -55,14 +66,14 @@ function masks(h::EightChannelHead,l::JLConstants.WellPlate) # for generic 96 we
         1 <= c <= C || return false 
         wi,wj=cartesian(W,w)
         pm,pn=cartesian(P,p)
-        return  wj == pn 
+        return  wj == pn && wi == c
     end 
     Md = deepcopy(Ma) 
     return Ma,Md,S,S
 end 
 
 function masks(h::EightChannelHead,l::JLConstants.WP384) 
-    C= 1
+    C= 8
     Wi,Wj=JLIMS.shape(l)
     Pi,Pj = 2,Wj
     W = falses(Wi,Wj)
@@ -75,7 +86,7 @@ function masks(h::EightChannelHead,l::JLConstants.WP384)
         1 <= c <= C || return false 
         wi,wj=cartesian(W,w)
         pm,pn=cartesian(P,p)
-        return wi % 2 == 2-pm && wj == pn 
+        return wi == 2*(c-1) + pm && wj == pn 
     end 
     Md = deepcopy(Ma) 
     return Ma,Md,S,S

@@ -13,6 +13,8 @@ using
     JSON,
     UUIDs,
     Plots,
+    StatsBase,
+    LinearAlgebra,
     TextWrap
 
 import Plots.plot 
@@ -31,11 +33,14 @@ include("./Equipment/SingleChannel.jl")
 include("./Equipment/EightChannel.jl")
 include("./Equipment/NullRobot.jl")
 include("./DispenseSolver/utils.jl")
+include("./DispenseSolver/objectives.jl")
 include("./DispenseSolver/dispense_solver.jl")
 
 
 #types
 export random_protocol_name
+
+export min_operations!,min_sources!,min_labware_crossover!
 
 #export MixingError,OverdraftError,InsufficientIngredientError,ContainerError,StockCompatibilityError
 #export strain_array, ingredient_array

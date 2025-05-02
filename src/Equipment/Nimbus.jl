@@ -50,14 +50,25 @@ NimbusConfiguration = Configuration{NimbusHead,Deck,NimbusSettings}
 const nimbus = NimbusConfiguration("Nimbus",NimbusSingleChannelHead(),nimbus_deck,NimbusSettings(25))
 
 
+function plumbing_mask(h::NimbusSingleChannelHead)
+    pistons = 1
+    channels = 1
+    function Mp(p::Integer,c::Integer)
+        1 <= p <= pistons || return false 
+        1 <= c <= channels || return false 
+      return true
+    end
+    return Mp ,pistons 
+  end 
 
 
 function masks(h::NimbusSingleChannelHead,l::Labware)
     C= 1
     Wi,Wj=JLIMS.shape(l)
-    Pi,Pj = 1,1
+    Pi,Pj = JLIMS.shape(l)
     W = falses(Wi,Wj)
     P=falses(Pi,Pj)
+    S=(Pi*Pj,C)
     function Ma(w::Integer,p::Integer,c::Integer) 
         # w=wells, p=positions, c=channels
         1 <= w <= Wi*Wj || return false 
@@ -68,7 +79,7 @@ function masks(h::NimbusSingleChannelHead,l::Labware)
         return wi == pm && wj == pn 
     end 
     Md=Ma 
-    return Ma,Md
+    return Ma,Md,S,S
 end 
 
 

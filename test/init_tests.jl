@@ -12,6 +12,7 @@ deep_well= generate_location(JLConstants.DeepWP96,"deepwell")
 
 wp96=generate_location(JLConstants.WP96,"96-well")
 wp384=generate_location(JLConstants.WP384,"384-well")
+dwp96=generate_location(JLConstants.DeepWP96,"deep_well")
 conical50_1=generate_location(JLConstants.Conical50,"conical_1")
 conical50_2=generate_location(JLConstants.Conical50,"conical_2")
 conical50_3=generate_location(JLConstants.Conical50,"conical_3")
@@ -25,15 +26,15 @@ conical50_10=generate_location(JLConstants.Conical50,"conical_10")
 conical50_11=generate_location(JLConstants.Conical50,"conical_11")
 conical50_12=generate_location(JLConstants.Conical50,"conical_12")
 
-conicals= [conical50_1,conical50_2,conical50_3,conical50_4,conical50_5,conical50_6,conical50_7,conical50_8,conical50_9,conical50_10]
+conicals= [conical50_1,conical50_2,conical50_3,conical50_4,conical50_5,conical50_6,conical50_7,conical50_8,conical50_9,conical50_10,conical50_11,dwp96]
 
 
 rm(db_file)
 
 chems  = Dict(
-    chem"ampicillin" => 1u"mg",
-    chem"sucrose" => 2.5u"mg",
-    chem"chloramphenicol" => 3u"mg",
+    chem"ampicillin" => 0.1u"mg",
+    chem"sucrose" => 0.25u"mg",
+    chem"chloramphenicol" => 0.3u"mg",
     chem"acid_red_1"=> 1u"µg",
     chem"alanine"=> 50u"µg"
 )
@@ -47,7 +48,7 @@ orgs = [
 cdm_2x = 2/5 * cdm_glucose_500mL - 100u"mL" * chem"water"  # 2x cdm with glucose 
 
 for child in children(reservior)
-    child.stock = 2/5 * cdm_glucose_500mL - 100u"mL" * chem"water"  # 2x cdm with glucose 
+    child.stock = cdm_2x # 2x cdm with glucose 
 end 
 
 
@@ -68,15 +69,15 @@ for child in children(conical50_4)
 end 
 
 for child in children(conical50_5)
-    child.stock = 0.05u"g" * chem"chloramphenicol" + 20u"mL" * chem"water"
+    child.stock = 0.2u"g" * chem"chloramphenicol" + 20u"mL" * chem"water"
 end 
 
 for child in children(conical50_6) 
-    child.stock = 0.5u"g" * chem"chloramphenicol" + 30u"mL" * chem"ethanol" + 20u"mL" * chem"water" 
+    child.stock = 2u"g" * chem"chloramphenicol" + 30u"mL" * chem"ethanol" + 20u"mL" * chem"water" 
 end 
 
 for child in children(conical50_7)
-    child.stock = 0.001u"g" * chem"acid_red_1" + 25u"mL" * chem"water" 
+    child.stock = 0.1u"g" * chem"acid_red_1" + 25u"mL" * chem"water" 
 end 
 
 for child in children(conical50_8)
@@ -84,12 +85,18 @@ for child in children(conical50_8)
 end 
 
 for child in children(conical50_9)
-    child.stock = org"SMU_UA159" + 100u"mL"* chem"water" 
+    child.stock = org"SMU_UA159" + 25u"mL"* chem"water" 
 end 
 
 for child in children(conical50_10)
-    child.stock = org"SSA_SK36" + 100u"mL" * chem"water" 
+    child.stock = org"SSA_SK36" + 25u"mL" * chem"water" 
 end 
+
+for child in children(conical50_11)
+    child.stock= 30u"mL" * chem"water"
+end 
+
+conical_11_target=deepcopy(conical50_11)
 
 for child in children(wp96)
     child.stock = 1/1000 * cdm_2x  + 100u"µL" * chem"water"
@@ -97,14 +104,20 @@ for child in children(wp96)
     for _ in 1:n
         chemical = rand(keys(chems))
         val=rand(0:0.1:1)
-        child.stock = val*chems[chemical]*chemical
+        child.stock += val*chems[chemical]*chemical
     end
     porg =0.8 
     if rand() < porg 
-        org = rand(vcat(orgs,))
+        org = rand(orgs)
         child.stock += org 
     end 
 end
+
+
+for child in children(dwp96)
+    child.stock = 2u"mL" *chem"water" 
+end 
+
 
     
 

@@ -46,6 +46,16 @@ const p2 = SingleChannelConfiguration("P-2",p2_head,single_channel_deck,single_c
 
 
 
+function plumbing_mask(h::SingleChannelHead)
+    pistons = 1
+    channels = 1
+    function Mp(p::Integer,c::Integer)
+      1 <= p <= pistons || return false 
+      1 <= c <= channels || return false 
+      return true
+    end
+    return Mp , pistons 
+  end 
 
 
 

@@ -47,6 +47,18 @@ const tempest_lv = TempestConfiguration("Tempest Low Volume",TempestLVHead(),tem
 const tempest_hv = TempestConfiguration("Tempest High Volume",TempestHVHead(),tempest_deck,TempestSettings())
 
 
+function plumbing_mask(h::TempestHead)
+    pistons = 8
+    channels = 8
+    function Mp(p::Integer,c::Integer)
+        1 <= p <= pistons || return false 
+        1 <= c <= channels || return false 
+      return p==c
+    end
+    return Mp,pistons
+  end 
+  
+
 
 function masks(h::TempestHead,l::JLConstants.WP96) # for generic 96 well plates, we will define a separate method for 384 well plates 
     C= 8
@@ -54,6 +66,7 @@ function masks(h::TempestHead,l::JLConstants.WP96) # for generic 96 well plates,
     Pi,Pj = 1,12
     W = falses(Wi,Wj)
     P=falses(Pi,Pj)
+    
     function Ma(w::Integer,p::Integer,c::Integer) # tempest cannot aspirate from well plates 
         return false
     end 
@@ -66,7 +79,7 @@ function masks(h::TempestHead,l::JLConstants.WP96) # for generic 96 well plates,
         pm,pn=cartesian(P,p)
         return wi == c && wj == pn 
     end 
-    return Ma,Md
+    return Ma,Md, (0,0),(Pi*Pj,C)
 end 
 
 function masks(h::TempestHead,l::JLConstants.WP384) # for generic 96 well plates, we will define a separate method for 384 well plates 

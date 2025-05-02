@@ -73,14 +73,16 @@ function organism_array(stocks::Vector{<:JLIMS.Stock},orgs::Vector{JLIMS.Organis
 end  
 
 
-
+function labware_id_and_type(lw::JLIMS.Labware)
+    return (JLIMS.location_id(lw),typeof(lw))
+end 
 
 function get_all_labware(sources::Vector{<:JLIMS.Well},targets::Vector{<:JLIMS.Well})
 
     all(map(x-> !isnothing(x),JLIMS.parent.(sources))) || ArgumentError("all source wells must have a searchable parent")
     all(map(x-> !isnothing(x),JLIMS.parent.(targets))) || ArgumentError("all target wells must have a searchable parent")
 
-    all_labware = unique(vcat(JLIMS.parent.(sources),JLIMS.parent.(targets)))
+    all_labware = unique(labware_id_and_type,vcat(JLIMS.parent.(sources),JLIMS.parent.(targets)))
 
     return all_labware 
 end 
@@ -131,8 +133,12 @@ function slot_stocks(sources::Vector{<:JLIMS.Well},targets::Vector{<:JLIMS.Well}
     for l in all_labware 
         for c in children(l)
             id = location_id(c)
+            x=findfirst(t->t==id,src_ids)
+            y = findfirst(t->t==id,tgt_ids)
             push!(tgt_caps, ustrip(uconvert(u"µL",JLIMS.wellcapacity(c))))
-            x=findfirst(y->y==id,src_ids)
+
+                
+            
             if isnothing(x) 
                 push!(src_stocks,JLIMS.Empty())
                 push!(src_enforced,false)
@@ -140,14 +146,15 @@ function slot_stocks(sources::Vector{<:JLIMS.Well},targets::Vector{<:JLIMS.Well}
                 push!(src_stocks,JLIMS.stock(sources[x]))
                 push!(src_enforced,true)
             end 
-            x = findfirst(y->y==id,tgt_ids)
-            if isnothing(x)
+            
+            if isnothing(y)
                 push!(tgt_stocks,JLIMS.Empty())
                 push!(tgt_enforced,false)
             else
-                push!(tgt_stocks,JLIMS.stock(targets[x]))
+                push!(tgt_stocks,JLIMS.stock(targets[y]))
                 push!(tgt_enforced,true)
             end 
+            
         end 
     end 
     return src_stocks,tgt_stocks,src_enforced,tgt_enforced,tgt_caps
@@ -198,6 +205,25 @@ end
   
 
 
+
+function get_masks(h::TransferHead, l::Labware)
+    Ma,Md,Sa,Sd =masks(h,l)
+    plumb = plumbing_mask(h) 
+
+    asp = (Ma,Sa)
+    disp = (Md,Sd)
+
+    return asp,disp,plumb 
+end 
+
+
+function get_masks(configs::Vector{<:Configuration},all_labware::Vector{Labware})
+        
+    M = map(I -> get_masks(I...),Iterators.product(head.(configs),all_labware))
+
+    asp,disp,plumb = map(x->getindex.(M,x),1:3)
+    return asp,disp,plumb
+end 
 
 
 

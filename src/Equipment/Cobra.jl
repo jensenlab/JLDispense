@@ -64,6 +64,19 @@ liquidclass(::JLIMS.Stock) = "Water"
 
 
 # define masks 
+function plumbing_mask(h::CobraHead)
+  pistons = 4
+  ch= 4
+  function Mp(p::Integer,c::Integer)
+    1 <= p <= pistons || return false 
+    1 <= c <= ch || return false 
+    return p == c 
+  end
+  return Mp ,pistons 
+end 
+
+
+
 
 function masks(h::CobraHead,l::JLConstants.WellPlate) # for generic 96 well plates, we will define a separate method for 384 well plates 
   C= length(channels(h))
@@ -95,7 +108,7 @@ function masks(h::CobraHead,l::JLConstants.WellPlate) # for generic 96 well plat
       wi,wj=cartesian(W,w)
       pm,pn=cartesian(P,p)
       return wi == c+pm-4 && wj == pn 
-  end 
+  end
   return Ma,Md,Sa,Sd
 end
 function masks(h::CobraHead,l::JLConstants.WP384) 
@@ -132,6 +145,25 @@ function masks(h::CobraHead,l::JLConstants.WP384)
   return Ma,Md,Sa,Sd
 end 
 
+function masks(h::CobraHead,l::JLConstants.DeepReservior) # for generic 96 well plates, we will define a separate method for 384 well plates 
+  C=4
+  Wi,Wj= 1,1
+  Pi,Pj = 1,1
+  W = falses(Wi,Wj)
+  P=falses(Pi,Pj)
+  S = (1,1)
+  function Ma(w::Integer,p::Integer,c::Integer) 
+      # w=wells, p=positions, c=channels
+      1 <= w <= Wi*Wj || return false 
+      1 <= p <= Pi*Pj || return false 
+      1 <= c <= C || return false 
+      wi,wj=cartesian(W,w)
+      pm,pn=cartesian(P,p)
+      return true 
+  end 
+  Md = deepcopy(Ma) 
+  return Ma,Md,S,S
+end 
 
 
 
