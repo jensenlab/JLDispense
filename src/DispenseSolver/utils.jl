@@ -161,6 +161,41 @@ function slot_stocks(sources::Vector{<:JLIMS.Well},targets::Vector{<:JLIMS.Well}
 end
 
 
+function can_slot_labware_pair(a::Labware,b::Labware,config::Configuration) 
+
+    open_slots = Set{Tuple{DeckPosition,Int}}()
+
+    for position in deck(config) 
+        n_slots = prod(slots(position))
+        for i in 1:min(n_slots,2) 
+            push!(open_slots,(position,i))
+        end 
+    end 
+    placed_a = false 
+    placed_b = false 
+
+    for s in open_slots 
+        if can_place(a,s[1])
+            placed_a=true 
+            delete!(open_slots,s)
+            break 
+        end
+        
+    end 
+
+    for s in open_slots 
+        if can_place(b,s[1])
+            placed_b=true 
+            delete!(open_slots,s)
+            break 
+        end
+    end 
+
+    return placed_a && placed_b
+
+end 
+
+
 
 function update_priority!(sources::Vector{<:JLIMS.Well},targets::Vector{<:JLIMS.Well},priority::PriorityDict)
     src_chems= get_all_chemicals(stock.(sources))
@@ -217,7 +252,7 @@ function get_masks(h::TransferHead, l::Labware)
 end 
 
 
-function get_masks(configs::Vector{<:Configuration},all_labware::Vector{Labware})
+function get_masks(configs::Vector{<:Configuration},all_labware::Vector{<:Labware})
         
     M = map(I -> get_masks(I...),Iterators.product(head.(configs),all_labware))
 

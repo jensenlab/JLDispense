@@ -56,7 +56,7 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
         tq = Float64.(Matrix(Unitful.ustrip.(target_quantities)))
         target_organisms = organism_array(tgt_stocks,all_organisms)
         to= Matrix(target_organisms)
- 
+        println(typeof(to))
         # check for missing source chemicals needed to complete the destinations
         missing_chemicals=filter(x-> sum(Unitful.ustrip.(source_concentrations[:,Symbol(x.name)]))==0,get_all_chemicals(stock.(targets)))       
         if length(missing_chemicals) > 0 
@@ -211,8 +211,9 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
         @variable(model,Qlw[1:L,1:L] >= 0)
         # constraints to ensure that we create the targets properly
         @constraint(model, Q'*sc .- chem_slacks .== tq ) # create the targets with the sources, allowing for some slack. This is a mass/volume balance. 
+        if O >0 
         @constraint(model, Q'*so .- org_slacks .== inoculation_quantity*to) # ensure that if a strain is dispensed, meaure the discrepancy with the strain slack
-
+        end
         # measure the physical masked operations 
         for i in 1:W 
                 for j in 1:W 
@@ -252,6 +253,17 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
         for i in 1:L 
                 for j in 1:L 
                         @constraint(model,Qlw[i,j] == sum(Q[Lw_ranges[i],Lw_ranges[j]]))
+                        for r in 1:R 
+                                if !can_slot_labware_pair(all_labware[i],all_labware[j],configs[r])
+                                        lw_ms = union(w_to_m[Lw_ranges[i]]...)
+                                        lw_ns = union(w_to_n[Lw_ranges[j]]...)
+                                        ms = intersect(lw_ms,Rm[r])
+                                        ns = intersect(lw_ns,Rn[r])
+
+                                        @constraint(model, V[ms,ns] .== 0)
+                                end 
+                        end
+
                 end 
         end 
 
@@ -324,7 +336,7 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
         # SET UP OBJECTIVES
 
         ############################################################################################################################################################
-
+        if O > 0
         set_objective_sense(model, MOI.FEASIBILITY_SENSE)
         org_weights=t_enforced
         T=findall(x->x==true,t_enforced)
@@ -336,7 +348,7 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
         delta=slack_tolerance * inoculation_quantity*to[T,:] # delta is the tolerance we give to updating the slack in higher priority levels, it is some fraction of the dispense target quantity for every destination. Wiggle room for the slack in future iterations 
         @constraint(model, org_slacks[T,:] .>= -current_slacks .- delta)
         @constraint(model, org_slacks[T,:] .<= current_slacks .+ delta)
-        
+        end
         set_objective_sense(model, MOI.FEASIBILITY_SENSE)
 
         target_weights = t_enforced 
@@ -438,13 +450,13 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
                 sol_quality[d,c]=0
                 if all_chemicals[c] in target_chems 
                         if t_enforced[d]
-                                slack= c_slacks[d,c]^2 
-                                target = tq[d,c]^2 
+                                slack= abs(c_slacks[d,c])
+                                target = tq[d,c]
                                 if target == 0 && isapprox(slack,0;atol=numerical_tolerance)
                                                 sol_quality[d,c]= 0 
                                 elseif target == 0 && !isapprox(slack,0;atol=numerical_tolerance) 
                                                 println("stock target ($(d)), chemical: $(all_chemicals[c]), unbounded error, using max target value for $(all_chemicals[c]) to calculate error")
-                                                sol_quality[c] = slack/ maximum(tq[:,c].^2)
+                                                sol_quality[c] = slack/ maximum(tq[:,c])
                                 else
                                                 sol_quality[c]= slack/target 
                                 end 
@@ -453,8 +465,8 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
         end 
         max_error,max_idx = findmax(sol_quality)
         if max_error > obj_tolerance
-                println("Unacceptable Solution: \n      max error = $(max_error*100)% \n        tolerance limit = $(obj_tolerance*100)% \n      stock_target: $(max_idx[1]) \n  chemical: $(all_chemicals[max_idx[2]])")
-                #return model
+                error("Unacceptable Solution: \n      max error = $(max_error*100)% \n        tolerance limit = $(obj_tolerance*100)% \n      stock_target: $(max_idx[1]) \n  chemical: $(all_chemicals[max_idx[2]])")
+                 
         end 
         println("mean solution error: $(mean(sol_quality*100))")
 
@@ -473,11 +485,27 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
                         b = within_labware_index[j]
                         wm = w_to_m[i]
                         wn = w_to_n[j] 
+                        wmch= w_to_m_channelid[i]
+                        wnch = w_to_n_channelid[j]
                         for r in 1:R 
+                                idxs=Tuple{Int,Int}[]
+                                wmr_idxs = findall(x-> x in Rm[r],wm)
+                                wnr_idxs = findall(x->x in Rn[r],wn)
 
-                                wmr = filter(x-> x in Rm[r],wm)
-                                wnr = filter(x->x in Rn[r],wn)
-                                idxs = CartesianIndex.(Iterators.product(wmr,wnr))
+                                wmr = wm[wmr_idxs]
+                                wnr=wn[wnr_idxs]
+                                wmrch=wmch[wmr_idxs]
+                                wnrch=wnch[wnr_idxs]
+
+                                for f in eachindex(wmrch)
+                                        for g in eachindex(wnrch) 
+                                                if wmrch[f] == wnrch[g] # the pairing must use the same channel to execute the transfer 
+        
+                                                        push!(idxs,(wmr[f],wnr[g]))
+                                                end
+                                        end 
+                                end 
+                                idxs=CartesianIndex.(idxs)
                                 config_dispenses[r][la,ld][a,b] = round(sum(ops[idxs]),digits=round_digits)
                         end 
                 end 
@@ -487,7 +515,7 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
         end
 
         if return_model 
-                return config_dispenses,slotting_indicators,model
+                return config_dispenses,slotting_indicators,model, sol_quality
         else
                 return config_dispenses,slotting_indicators
         end

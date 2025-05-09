@@ -34,7 +34,7 @@ const single_channel_settings= SingleChannelSettings()
 
 
 
-const single_channel_deck = [UnconstrainedPosition("Position 1",true,true,false,false,rectangle)]
+const single_channel_deck = [UnconstrainedPosition("Position 1",true,true,false,false,"rectangle")]
 
 SingleChannelConfiguration = Configuration{SingleChannelHead,Deck{UnconstrainedPosition},SingleChannelSettings}
 

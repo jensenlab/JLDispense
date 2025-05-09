@@ -52,6 +52,7 @@ abstract type DeckPosition end
 
 
 struct EmptyPosition <: DeckPosition 
+  name::String
 end 
 
 
@@ -61,7 +62,7 @@ struct UnconstrainedPosition <:DeckPosition
   dispense::Bool
   move::Bool
   read::Bool
-  plotting_fun::Function
+  plotting_shape::String
 end 
 
 
@@ -75,7 +76,7 @@ struct SBSPosition <: DeckPosition
   dispense::Bool
   move::Bool
   read::Bool
-  plotting_fun::Function
+  plotting_shape::String
 end 
 
 
@@ -87,7 +88,7 @@ struct StackPosition <: DeckPosition
   dispense::Bool
   move::Bool
   read::Bool
-  plotting_fun::Function
+  plotting_shape::String
 end 
 
 
@@ -112,6 +113,7 @@ labware(::UnconstrainedPosition) = Set([JLIMS.Labware])
 labware(::EmptyPosition) = Set{Type{<:Labware}}()
 slots(::EmptyPosition)= ()
 slots(::UnconstrainedPosition) = (4,6)
+
 
 
 
@@ -182,3 +184,14 @@ function masks(h::Head,l::Labware)
   Ma(w::Integer,p::Integer,c::Integer)= false 
   return Ma,Ma,(0,0),(0,0)
 end
+
+
+function can_place(labware::Labware,deck::Deck)
+
+  for pos in deck 
+    if can_place(labware,pos)
+      return true 
+    end 
+  end
+  return false 
+end 

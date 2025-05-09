@@ -60,7 +60,8 @@ function circle(x,y,d)
     x .+ r*sin.(θ), y .+ r*cos.(θ)
 end 
 
-function rectangle(x,y,w,h= w )
+function rectangle(x,y,w)
+    h=w
     a = w/2
     b = h/2 
     up = LinRange(y-b,y+b,500)
@@ -74,22 +75,28 @@ function rectangle(x,y,w,h= w )
 end 
 
 
-plotting_shape(::Labware) = rectangle 
-plotting_shape(::JLConstants.Tube) = circle
+#plotting_shape(::Labware) = rectangle 
+#plotting_shape(::JLConstants.Tube) = circle
 
 
 
 
-
+plotting_fun=Dict(
+    "rectangle"=>rectangle,
+    "circle"=>circle
+)
 
 
 
 function plot(slotting::SlottingDict,config::Configuration;wrapwidth::Integer=20,titlefontsize::Integer=18,fontsize::Integer=14,plotsize=(1200,800))
 
-    
+    plot_shape=(0,0)
+    if deck(config) isa Vector
+        plot_shape=(length(deck(config)),1)
+    else
 
-    plot_shape=size(deck(config))
-
+        plot_shape=size(deck(config))
+    end 
     plts = [] 
     for row in 1:plot_shape[1]
         for col in 1:plot_shape[2]
@@ -112,7 +119,7 @@ function plot(slotting::SlottingDict,config::Configuration;wrapwidth::Integer=20
                 for x in 1:c
                     for y in 1:r 
                         annotate!(x,y,text(TextWrap.wrap(vals[y,x],width=wrapwidth),:center,fontsize))
-                        plot!((pos.plotting_fun)(x,y,1),color="black")
+                        plot!((plotting_fun[pos.plotting_shape])(x,y,1),color="black")
                     end 
                 end 
             end 

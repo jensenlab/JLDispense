@@ -48,8 +48,8 @@ const cobra_head = CobraHead(fill(cobra_nozzle,4,1))
 
 const cobra_compat_labware= Set([JLConstants.DeepWP96,JLConstants.WP96,JLConstants.WP384])
 
-const cobra_position_1=SBSPosition("Slot 1", cobra_compat_labware,(1,1),true,false,false,false,rectangle)
-const cobra_position_2=SBSPosition("Slot 2", cobra_compat_labware,(1,1),false,true,false,false,rectangle)
+const cobra_position_1=SBSPosition("Aspirate", cobra_compat_labware,(1,1),true,false,false,false,"rectangle")
+const cobra_position_2=SBSPosition("Dispense", cobra_compat_labware,(1,1),false,true,false,false,"rectangle")
 
 const cobra_deck = [cobra_position_1,cobra_position_2]
 
@@ -548,8 +548,8 @@ end
 
 function design2protocols(directory::AbstractString,design::DataFrame,source::JLIMS.Labware,destination::JLIMS.Labware,config::CobraConfiguration)
   pad=settings(config).ASPPad
-  maxASP=ustrip.(uconvert.(u"µL",map(x->x.maxASP,nozzles(head(config))) ))
-  maxShot=ustrip(uconvert(u"µL",map(x->x.maxVol,nozzles(head(config)))))
+  maxASP=ustrip.(uconvert.(u"µL",map(x->x.maxAsp,channels(head(config))) ))
+  maxShot=ustrip(uconvert.(u"µL",map(x->x.maxVol,channels(head(config)))))
   cobra_location=settings(config).cobra_path
   # Check for issues with the design
 
@@ -561,9 +561,6 @@ function design2protocols(directory::AbstractString,design::DataFrame,source::JL
     r,c=size(des)
     if r != n_in
       error("output plate size does not match design. Expected design to have $(n_out) rows. Pad design with empty experiments if needed or split the design across multiple destination plates.")
-    end 
-    if r != length(robot.configuration.liquidclasses)
-      error("each of the $c reagents must have a specified liquid class")
     end 
     if c > n_out 
       error("number of design reagents exceeds the size of the source plate. Split the design across multiple source plates")
@@ -577,12 +574,12 @@ function design2protocols(directory::AbstractString,design::DataFrame,source::JL
     pos=collect(Iterators.product(rows,cols))
     positions=reshape(pos,prod(size(pos)),1)
     protocols=String[]
-    configs=Cobra[]
+    configs=CobraConfiguration[]
   # Start the protocol generation process  
     for set in 1:fld(c,4) # loop through sets of four locations in the source plate 
       idxs=4*(set-1)+1:4*(set-1)+4
-      d = Matrix(des[:,idxs]) # grab the appropriate source wells from the design 
-      while sum(d)>0 # while there is still liquid to be dispensed in the set 
+      d = ustrip.(Matrix(des[:,idxs])) # grab the appropriate source wells from the design 
+      while sum(d)>0  # while there is still liquid to be dispensed in the set 
         to_dispense=zeros(size(d))
         fileidxs=Int64[]
         for channel in 1:4
@@ -602,7 +599,7 @@ function design2protocols(directory::AbstractString,design::DataFrame,source::JL
           filename=joinpath(directory,"DispenseFile$(filecounter).csv")
           push!(fileidxs,filecounter)
           filecounter+=1
-          CSV.write(filename,x;writeheader=false)   
+          CSV.write(filename,x;header=false)   
         end 
         d=d.-to_dispense
 
@@ -612,14 +609,14 @@ function design2protocols(directory::AbstractString,design::DataFrame,source::JL
         ASPCol=positions[set][2]
         ASPVol=vec(sum(to_dispense,dims=1))*pad
         liquidclasses=fill("Water",4)
-        source=cobra_names[source]
-        destination=cobra_names[destination]
+        src=cobra_names[typeof(source)]
+        dst=cobra_names[typeof(destination)]
         protocol_name=basename(directory)
         path=[cobra_location*"$(protocol_name)\\DispenseFile$(k).csv" for k in fileidxs]
-        protocol_settings=CobraProtocolSettings(source,destination,ASPRow,ASPCol,ASPVol,path,liquidclasses)
+        protocol_settings=CobraProtocolSettings(src,dst,ASPRow,ASPCol,ASPVol,path,liquidclasses)
         push!(configs,config)
         #settings=CobraSettings(source,destination,positions[set][1],positions[set][2],washtime,vec(sum(to_dispense,dims=1))*pad,cobra_path,liquidclasses[idxs],dispensepause,predispensecount)
-        push!(protocols,fill_protocol_template(protocol_settings,config))
+        push!(protocols,fill_protocol_template(settings(config),protocol_settings))
       end  
     end 
     return protocols,configs
@@ -644,22 +641,22 @@ function convert_design(design::DataFrame,labware::Vector{<:Labware},slotting::S
   source_names= []
   for col in 1:ncol(design)
       lw=get_labware(labware,col)
-      if can_aspirate(head(config),slotting[lw],lw) 
+      if can_aspirate(head(config),slotting[lw][1],lw) 
           push!(source_cols,col)
           push!(source_names,JLIMS.name(lw))
       end 
   end 
   for row in 1:nrow(design) 
       lw=get_labware(labware,row)
-      if can_dispense(head(config),slotting[lw],lw)
+      if can_dispense(head(config),slotting[lw][1],lw)
           push!(dispense_rows,row)
       end 
   end 
 
   out_design = design[dispense_rows,source_cols]
 
-  dest_labware= filter(x-> can_dispense(head(config),slotting[x],x),labware)
-  src_labware =filter(x-> can_aspirate(head(config),slotting[x],x),labware)
+  dest_labware= filter(x-> can_dispense(head(config),slotting[x][1],x),labware)
+  src_labware =filter(x-> can_aspirate(head(config),slotting[x][1],x),labware)
   if length(dest_labware) > 1 
       error("multiple destination labware detected. Cobra only supports a single destination labware")
   end 
@@ -687,7 +684,7 @@ Create Cobra dipsense instructions for well plate dispensing
 
 
 """
-function dispense(config::CobraConfiguration, design::DataFrame, directory::AbstractString,protocol_name::AbstractString,labware::Vector{<:Labware},slotting::SlottingDict=slotting_greedy(labware,config);render_loading=true) 
+function dispense(config::CobraConfiguration, design::DataFrame, directory::AbstractString,protocol_name::AbstractString,labware::Vector{<:Labware},slotting::SlottingDict=slotting_greedy(labware,config);render_loading=true,kwargs...) 
     dispenses,source,destination = convert_design(design,labware,slotting,config)
     full_dir=joinpath(directory,protocol_name)
     if ~isdir(full_dir)

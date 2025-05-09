@@ -22,7 +22,7 @@ import Plots.plot
 include("./RandomProtocolNames/random_protocol_name.jl")
 include("./Equipment/Configuration.jl")
 include("./utils.jl")
-include("./Slotting/slotting.jl")
+
 #include("./DispenseSolver/dispense_solver.jl")
 include("./Equipment/Cobra.jl")
 include("./Equipment/Mantis.jl")
@@ -35,6 +35,9 @@ include("./Equipment/NullRobot.jl")
 include("./DispenseSolver/utils.jl")
 include("./DispenseSolver/objectives.jl")
 include("./DispenseSolver/dispense_solver.jl")
+include("./Slotting/slotting.jl")
+include("./Instructor/instructor.jl")
+include("./Scheduler/scheduler.jl")
 
 
 #types

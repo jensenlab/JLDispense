@@ -14,6 +14,7 @@ src_wells = vcat(map(x->vec(children(x)),conicals)...)
 src_wells=vcat(src_wells,children(reservior)[1])
 
 instruments =[JLDispense.p20,JLDispense.platemaster,JLDispense.multichannel_p100,JLDispense.mantis_hv,JLDispense.mantis_lv,JLDispense.cobra,JLDispense.nimbus,JLDispense.tempest_lv]
+instruments=[JLDispense.nimbus,JLDispense.cobra,JLDispense.platemaster]
 inst_cost = [100,1,12,3,5,1,2,3]
 ins= [JLDispense.p2]
 priority=JLDispense.PriorityDict(
@@ -23,15 +24,16 @@ priority=JLDispense.PriorityDict(
 
 sec_objectives = (min_operations!,min_sources!,min_labware_crossover!)
 sec_objectives = (min_operations!,) 
+sec_objectives=()
 
-disp,slotting,out = JLDispense.dispense_solver(src_wells,tgt_wells,instruments,sec_objectives...;priority=priority,obj_tolerance=1e-3,return_model=true)
+disp,slotting,out = JLDispense.dispense_solver(src_wells,tgt_wells,instruments,sec_objectives...;priority=priority,obj_tolerance=1e-2,return_model=true)
 
-timetest = @timed  JLDispense.dispense_solver(src_wells,tgt_wells,instruments,sec_objectives...;priority=priority,obj_tolerance=1e-3,return_model=true)
+timetest = @timed  JLDispense.dispense_solver(src_wells,tgt_wells,instruments,sec_objectives...;priority=priority,obj_tolerance=1e-2,return_model=true)
 optimize!(out)
 Q=out[:Q] 
 V= JuMP.value.(out[:V])
 
-write_files = false 
+write_files = true 
 
 if write_files 
 
@@ -72,3 +74,10 @@ println(sum.(slotting))
 println("sum dispenses = $(sum(JuMP.value.(Q))) µL")
 println("sum operations = $(sum(V)) µL")
 println("time to solve =  $(timetest.time) s" )
+disp_directory="./dispense_lists"
+
+if !isdir(disp_directory)
+    mkdir(disp_directory)
+end
+
+JLDispense.scheduler(disp_directory,src_wells,tgt_wells,instruments,sec_objectives...;priority=priority,obj_tolerance=1e-2)

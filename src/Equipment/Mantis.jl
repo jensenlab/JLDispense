@@ -31,9 +31,9 @@ struct MantisSettings <:InstrumentSettings
 end 
 
     
-const lc3 = StackPosition("LC3",Set([JLConstants.TipReservior,JLConstants.Conical15]),(24,1),true,false,false,false,circle)
-const mantis_hv_pos = StackPosition("Mantis High Volume" , Set([JLConstants.Conical]),(4,1),true,false,false,false,circle)
-const mantis_main = SBSPosition("Mantis Center Position",Set([JLConstants.MicroPlate,JLConstants.BreakawayPCRPlate]),(1,1),false,true,false,false,rectangle)
+const lc3 = StackPosition("LC3",Set([JLConstants.TipReservior,JLConstants.Conical15]),(24,1),true,false,false,false,"circle")
+const mantis_hv_pos = StackPosition("Mantis High Volume" , Set([JLConstants.Conical]),(4,1),true,false,false,false,"circle")
+const mantis_main = SBSPosition("Mantis Center Position",Set([JLConstants.MicroPlate,JLConstants.BreakawayPCRPlate]),(1,1),false,true,false,false,"rectangle")
 
 const mantis_deck = vcat(mantis_hv_pos,mantis_main,lc3)
 

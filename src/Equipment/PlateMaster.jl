@@ -9,29 +9,25 @@ struct PlateMasterHead<: FixedTransferHead
     PlateMasterHead() = new(fill(platemaster_nozzle,8,12))
 end 
 
-struct PlateMasterDeckPosition <: DeckPosition 
-    labware::Set{Type{<:Labware}}
-    PlateMasterDeckPosition() = new(Set([JLConstants.WellPlate]))
-end
+plate_master_compat_labware=Set([JLConstants.WellPlate])
+
+pm1=SBSPosition("Slot 1", plate_master_compat_labware,(1,1),false,true,false,false,"rectangle")
+pm2=SBSPosition("Slot 2", plate_master_compat_labware,(1,1),false,true,false,false,"rectangle")
+pm3=SBSPosition("Slot 3", plate_master_compat_labware,(1,1),false,true,false,false,"rectangle")
+pm4=SBSPosition("Slot 4", plate_master_compat_labware,(1,1),false,true,false,false,"rectangle")
 
 
-const platemaster_deck= fill(PlateMasterDeckPosition(),4)
+const platemaster_deck= [pm1 pm2; pm3 pm4]
 struct PlateMasterSettings <: InstrumentSettings 
-    PlateMasterSettings()= new()
+    setting::String
+    PlateMasterSettings()=new("placeholder")
 end 
 
 
-PlateMasterConfiguration = Configuration{PlateMasterHead,Deck{PlateMasterDeckPosition},PlateMasterSettings}
+PlateMasterConfiguration = Configuration{PlateMasterHead,Deck,PlateMasterSettings}
 
 const platemaster =PlateMasterConfiguration("PlateMaster",PlateMasterHead(),platemaster_deck,PlateMasterSettings())
 
-function can_aspirate(h::PlateMasterHead, d::PlateMasterDeckPosition,l::Labware) 
-    return can_place(l,d)
-end
-  
-function can_dispense(h::PlateMasterHead,d::PlateMasterDeckPosition,l::Labware) 
-    return can_place(l,d)
-end
 
 
 function plumbing_mask(h::PlateMasterHead)
@@ -115,6 +111,21 @@ end
 
 
 
+
+function dispense(config::PlateMasterConfiguration, design::DataFrame, directory::AbstractString,protocol_name::AbstractString,labware::Vector{<:Labware},slotting::SlottingDict=slotting_greedy(labware,config);render_loading=true,kwargs...) 
+    full_dir=joinpath(directory,protocol_name)
+    if ~isdir(full_dir)
+      mkdir(full_dir)
+    end 
+    CSV.write(joinpath(full_dir,"dispenses.csv"),design)
+    write(joinpath(full_dir,"config.json"),JSON.json(config))
+    #print("entire $(experiment_name) folder must be moved to Dropbox -> JensenLab -> Cobra")
+    if render_loading 
+      plt = plot(slotting,config)
+      png(joinpath(full_dir,"loading.png"))
+    end 
+    return nothing 
+end
 
 
     

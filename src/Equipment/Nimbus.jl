@@ -25,21 +25,21 @@ end
 
 # Define our available racks
 #15 mL tube
-tuberack15mL_0001=SBSPosition("TubeRack15ML_0001",Set([JLConstants.Conical15]),(4,6),true,true,false,false,circle)
+tuberack15mL_0001=SBSPosition("TubeRack15ML_0001",Set([JLConstants.Conical15]),(4,6),true,true,false,false,"circle")
 # 50 mL tube
-tuberack50mL_0001=SBSPosition("TubeRack50ML_0001",Set([JLConstants.Conical50]),(2,3),true,true,false,false,circle)
-tuberack50mL_0002=SBSPosition("TubeRack50ML_0002",Set([JLConstants.Conical50]),(2,3),true,true,false,false,circle)
-tuberack50mL_0003=SBSPosition("TubeRack50ML_0003",Set([JLConstants.Conical50]),(2,3),true,true,false,false,circle)
-tuberack50mL_0004=SBSPosition("TubeRack50ML_0004",Set([JLConstants.Conical50]),(2,3),true,true,false,false,circle)
-tuberack50mL_0005=SBSPosition("TubeRack50ML_0005",Set([JLConstants.Conical50]),(2,3),true,true,false,false,circle)
-tuberack50mL_0006=SBSPosition("TubeRack50ML_0006",Set([JLConstants.Conical50]),(2,3),true,true,false,false,circle)
+tuberack50mL_0001=SBSPosition("TubeRack50ML_0001",Set([JLConstants.Conical50]),(2,3),true,true,false,false,"circle")
+tuberack50mL_0002=SBSPosition("TubeRack50ML_0002",Set([JLConstants.Conical50]),(2,3),true,true,false,false,"circle")
+tuberack50mL_0003=SBSPosition("TubeRack50ML_0003",Set([JLConstants.Conical50]),(2,3),true,true,false,false,"circle")
+tuberack50mL_0004=SBSPosition("TubeRack50ML_0004",Set([JLConstants.Conical50]),(2,3),true,true,false,false,"circle")
+tuberack50mL_0005=SBSPosition("TubeRack50ML_0005",Set([JLConstants.Conical50]),(2,3),true,true,false,false,"circle")
+tuberack50mL_0006=SBSPosition("TubeRack50ML_0006",Set([JLConstants.Conical50]),(2,3),true,true,false,false,"circle")
 
 # 2 mL deep well plate
-Cos_96_DW_2mL_0001=SBSPosition("Cos_96_DW_2mL_0001",Set([JLConstants.DeepWP96,JLConstants.WP96]),(1,1),true,true,false,false,rectangle)
-Cos_96_DW_2mL_0002=SBSPosition("Cos_96_DW_2mL_0002",Set([JLConstants.DeepWP96,JLConstants.WP96]),(1,1),true,true,false,false,rectangle)
+Cos_96_DW_2mL_0001=SBSPosition("Cos_96_DW_2mL_0001",Set([JLConstants.DeepWP96,JLConstants.WP96,JLConstants.DeepReservior]),(1,1),true,true,false,false,"rectangle")
+Cos_96_DW_2mL_0002=SBSPosition("Cos_96_DW_2mL_0002",Set([JLConstants.DeepWP96,JLConstants.WP96,JLConstants.DeepReservior]),(1,1),true,true,false,false,"rectangle")
 
 
-nimbus_deck = [Cos_96_DW_2mL_0001 tuberack50mL_0001 tuberack50mL_0002 EmptyPosition(); tuberack50mL_0003 tuberack50mL_0004 tuberack50mL_0005 tuberack50mL_0006]
+nimbus_deck = [Cos_96_DW_2mL_0001 tuberack50mL_0001 tuberack50mL_0002 EmptyPosition("tip rack"); tuberack50mL_0003 tuberack50mL_0004 tuberack50mL_0005 tuberack50mL_0006]
 
 struct NimbusSettings <: InstrumentSettings 
     max_tip_use::Integer
@@ -96,7 +96,9 @@ function convert_design(design::DataFrame,labware::Vector{<:Labware}, slotting::
     # helper function that converts the design and slotting scheme into operations for the nimbus 
     
     all(map(x-> x[1] in deck(config),values(slotting))) || ArgumentError("All deck positions in the SlottingDict must be present on the deck")
-
+    L=length(labware)
+    lw_idx = vcat([fill(i,length(labware[i])) for i in 1:L]...)
+    within_labware_index = vcat([1:length(labware[i]) for i in 1:L]...) 
 
     source_id=String[]
     source_position=Union{String,Integer}[]
@@ -105,28 +107,29 @@ function convert_design(design::DataFrame,labware::Vector{<:Labware}, slotting::
     destination_position=Union{String,Integer}[]
     alphabet=collect('A':'Z')
     for col in 1:ncol(design) #sources
-        source = get_labware(labware,col)
-        s_id , s_pos = slotting[source]
+        source = labware[lw_idx[col]]
+        s_slot , s_pos = slotting[source]
         for row in 1:nrow(design) #destinations
             if design[row,col] == 0 
                 continue # skip if no volume transferred 
             end 
-            push!(source_id,s_id.name)
+            push!(source_id,name(s_slot))
             if length(source) ==1 
                 push!(source_position,s_pos)
             else
-                r,c = cartesian(falses(JLIMS.shape(source)...),col)
+
+                r,c = cartesian(falses(JLIMS.shape(source)...),within_labware_index[col])
                 pos=string(alphabet[r],c)
                 push!(source_position,pos)
             end 
             push!(volume,design[row,col])
-            destination =get_labware(labware,row)
-            d_id,d_pos = slotting[destination]
-            push!(destination_id,d_id)
+            destination =labware[lw_idx[row]]
+            d_slot,d_pos = slotting[destination]
+            push!(destination_id,name(d_slot))
             if length(destination) == 1 
                 push!(destination_position,d_pos)
             else
-                r,c = cartesian(falses(JLIMS.shape(destination)...),row)
+                r,c = cartesian(falses(JLIMS.shape(destination)...),within_labware_index[row])
                 pos=string(alphabet[r],c)
                 push!(destination_position,pos)
             end 
@@ -152,8 +155,8 @@ function slottingdict2dataframe(slotting::SlottingDict)
 
     for s in keys(slotting)
         push!(labware_ids,location_id(s))
-        push!(labware_names,name(s))
-        push!(deck_position,slotting[s][1])
+        push!(labware_names,JLIMS.name(s))
+        push!(deck_position,name(slotting[s][1]))
         push!(slot,slotting[s][2])
     end 
     
@@ -173,33 +176,32 @@ Create Hamilton Nimbus dipsense instructions
   ## Keyword Arguments
   * `nimbus_config`: A vector of NimbusRack objects that specify the configuration of the numbus. the default configuration is 5 50ml conical racks and a well plate rack. 
 """
-function dispense(config::NimbusConfiguration,design::DataFrame, directory::AbstractString,protocol_name::AbstractString,labware::Vector{<:Labware},slotting::SlottingDict = slotting_greedy(labware,config); render_loading=true)
+function dispense(config::NimbusConfiguration,design::DataFrame, directory::AbstractString,protocol_name::AbstractString,labware::Vector{<:Labware},slotting::SlottingDict = slotting_greedy(labware,config); render_loading=true,kwargs...)
     # input error handling 
     W= nrow(design) 
     lws = length.(labware) 
-    W == sum(lw) || ArgumentError("Dimension mismatch between design ($W) and number of wells in labware ($(sum(lw)))")
-    all(map(x-> x in keys(slotting),labware) || ArgumentError("All labware must be slotted"))
+    W == sum(lws) || ArgumentError("Dimension mismatch between design ($W) and number of wells in labware ($(sum(lws)))")
+    all(map(x-> x in keys(slotting),labware))|| ArgumentError("All labware must be slotted")
     allunique(values(slotting)) || ArgumentError("Only one labware can be assigned to a given slot")
     is_square(design) || ArgumentError("design must be a square dataframe")
-
     df=convert_design(design,labware,slotting,config)
     n=nrow(df)
     dispense_df=DataFrame([[],[],[],[],[],],names(df))
     for i = 1:n 
         vol=df[i,"Volume (uL)"]
         while vol > 1e-6*u"µL" 
-            shotvol=min(nozzles(head(config)).maxVol,vol) # maximum shot volume of 1 ml 
+            shotvol=min(channels(head(config))[1].maxVol,vol) # maximum shot volume of 1 ml 
             push!(dispense_df,(df[i,"Source Labware ID"],df[i,"Source Position ID"],ustrip(uconvert(u"µL",shotvol)),df[i,"Destination Labware ID"],df[i,"Destination Position ID"]))
             vol-=shotvol
         end 
     end 
-    append!(dispenses,dispense_df)
+    #append!(dispenses,dispense_df)
 
-    n=nrow(dispenses)
+    n=nrow(dispense_df)
     
     change_tip=zeros(Int64,n)
     for i in 2:n
-        if dispenses[i,"Source Position ID"] != dispenses[i-1,"Source Position ID"]
+        if dispense_df[i,"Source Position ID"] != dispense_df[i-1,"Source Position ID"]
             change_tip[i]=1
         end 
     end 
@@ -211,7 +213,7 @@ function dispense(config::NimbusConfiguration,design::DataFrame, directory::Abst
             change_tip[i+windowsize-1]=1
         end 
     end 
-    dispenses[!,"Change Tip Before"].= change_tip
+    dispense_df[!,"Change Tip Before"].= change_tip
     
     full_dir=joinpath(directory,protocol_name)
     if ~isdir(full_dir)
@@ -229,7 +231,7 @@ function dispense(config::NimbusConfiguration,design::DataFrame, directory::Abst
     end 
 
     
-    CSV.write(joinpath(full_dir,protocol_name*".csv"),dispenses)
+    CSV.write(joinpath(full_dir,protocol_name*".csv"),dispense_df)
     write(joinpath(full_dir,"config.json"),JSON.json(config))
     return nothing 
 end 
