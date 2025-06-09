@@ -4,9 +4,9 @@ setwd("~/Documents/GitHub/JLDispense/benchmarking")
 library(ggplot2)
 
 
-data = read.csv("benchmark.csv")
+data = read.csv("benchmark_2025-06-02.csv")
 
-data= data[data$time<800,]
+data= data[setdiff(1:nrow(data),c(58,397)),]
 
 insts=c("P-200","P-100 Multichannel","PlateMaster","Nimbus","Cobra")
 pistons=c(1,1,1,1,4)
@@ -30,14 +30,14 @@ for (i in 1:nrow(data)){
 
 data$pistons= piston_vals
 data$channels=channel_vals
-model <- lm(time ~ I(wells^2)*pistons*channels,data=data)
+model <- lm(time ~ I(wells^4)*I(pistons^2)*I(chemicals),data=data)
 
 summary(model)
 
-
-plt = ggplot(data=data)+ 
-  geom_point(aes(x=wells^3*pistons*channels,y=time))+
+plt <- ggplot(data=data) +
+  geom_point(mapping=aes(x=wells^4*pistons^2,y=time))+
   theme_classic()
 plt
+
 
 data$pistons = piston_vals

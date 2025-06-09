@@ -31,7 +31,7 @@ struct MixingError <:Exception
 
 
 
-function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs::Vector{<:Configuration},secondary_objectives...;robot_cost::Vector{<:Real}=ones(length(configs)),quiet::Bool=true,enforce_semicontinuous=true, timelimit::Real=10,slack_tolerance::Real=1e-4,numerical_tolerance::Real=1e-8,require_nonzero::Bool=true,return_model::Bool=false,obj_tolerance=1e-3,inoculation_quantity::Real=2, priority::PriorityDict=Dict{JLIMS.Chemical,UInt64}(),round_digits::Int=1,kwargs...) 
+function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs::Vector{<:Configuration},secondary_objectives...;robot_cost::Vector{<:Real}=ones(length(configs)),quiet::Bool=true, timelimit::Real=10,slack_tolerance::Real=1e-4,numerical_tolerance::Real=1e-8,require_nonzero::Bool=true,return_model::Bool=false,obj_tolerance=1e-3,inoculation_quantity::Real=2, priority::PriorityDict=Dict{JLIMS.Chemical,UInt64}(),round_digits::Int=1,kwargs...) 
 
 
 
@@ -209,9 +209,14 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
         @variable(model,chem_slacks[1:W,1:C])
         @variable(model,org_slacks[1:W,1:O])
         @variable(model,Qlw[1:L,1:L] >= 0)
+
+
+
+
         # constraints to ensure that we create the targets properly
         @constraint(model, Q'*sc .- chem_slacks .== tq ) # create the targets with the sources, allowing for some slack. This is a mass/volume balance. 
-        if O >0 
+
+        if O >0 # only write constraint if there are organisms present  
         @constraint(model, Q'*so .- org_slacks .== inoculation_quantity*to) # ensure that if a strain is dispensed, meaure the discrepancy with the strain slack
         end
         # measure the physical masked operations 

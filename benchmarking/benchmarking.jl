@@ -1,8 +1,10 @@
-using JLIMS,JLConstants,JLDispense, SQLite,CSV,DataFrames, Unitful,StatsBase,Random
+using JLIMS,JLConstants,JLDispense, SQLite,CSV,DataFrames, Unitful,StatsBase,Random,Dates
 
 include("init_benchmark.jl")
 
 Random.seed!(48207531)
+date=string(Dates.today())
+outfile="./benchmarking/benchmark_$date.csv"
 
 robots = [JLDispense.p200,JLDispense.platemaster,JLDispense.multichannel_p100,JLDispense.nimbus,JLDispense.cobra]
 
@@ -54,14 +56,14 @@ for n in 1:n_reps
             chem"water"=>typemax(UInt64)
         )
 
-        out = @timed JLDispense.dispense_solver(sources,targets,instruments;priority=priority,obj_tolerance=1e-3,return_model=true,timelimit=300)
+        out = @timed JLDispense.dispense_solver(sources,targets,instruments;priority=priority,obj_tolerance=1e-3,return_model=true,timelimit=60)
         ins = join(map(x->x.name,instruments),",")
         disp,slotting,model,quality =out.value 
         tm = out.time 
         n_wells = L*96+96
         q=maximum(quality)
         push!(data,[k,n_wells,R,ins,q,tm])
-        CSV.write("./benchmarking/benchmark.csv",data)
+        CSV.write(outfile,data)
         println("status: $ex / $expts" )
         global ex+=1 
 
@@ -112,17 +114,20 @@ for n in 1:n_reps
         priority=JLDispense.PriorityDict(
             chem"water"=>typemax(UInt64)
         )
+        try
+            out = @timed JLDispense.dispense_solver(sources,targets,instruments;priority=priority,obj_tolerance=1e-3,return_model=true,timelimit=300)
 
-        out = @timed JLDispense.dispense_solver(sources,targets,instruments;priority=priority,obj_tolerance=1e-3,return_model=true,timelimit=300)
-
-        ins = join(map(x->x.name,instruments),",")
-        disp,slotting,model,quality =out.value 
-        tm = out.time 
-        n_wells = L*96+96
-        q=maximum(quality)
-        push!(data,[k,n_wells,R,ins,q,tm])
-        CSV.write("./benchmarking/benchmark.csv",data)
-        println("status: $ex / $expts" )
+            ins = join(map(x->x.name,instruments),",")
+            disp,slotting,model,quality =out.value 
+            tm = out.time 
+            n_wells = L*96+96
+            q=maximum(quality)
+            push!(data,[k,n_wells,R,ins,q,tm])
+            CSV.write(outfile,data)
+        catch 
+            println("error for experiment $ex")
+        end 
+            println("status: $ex / $expts" )
         global ex+=1 
 
     end 

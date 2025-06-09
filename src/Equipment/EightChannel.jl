@@ -13,29 +13,25 @@ const p10_multichannel_head = EightChannelHead(fill(p10_nozzle,8))
 struct EightChannelSettings <: InstrumentSettings 
 end 
 
-struct EightChannelDeckPosition <: DeckPosition 
-    labware::Set{Type{<:Labware}}
-end
 
 const eight_channel_settings= EightChannelSettings()
 
 const eight_channel_labware = Set([JLConstants.WellPlate])
+const eight_channel_position = SBSPosition("Eight_Channel_Position", eight_channel_labware,(4,6),true,true,false,false,"rectangle")
 
-const eight_channel_position = EightChannelDeckPosition(eight_channel_labware)
+const eight_channel_deck = [eight_channel_position]
 
-const eight_channel_deck = [eight_channel_position,eight_channel_position]
-
-EightChannelConfiguration = Configuration{EightChannelHead,Deck{EightChannelDeckPosition},EightChannelSettings}
+EightChannelConfiguration = Configuration{EightChannelHead,Deck{SBSPosition},EightChannelSettings}
 
 
 const multichannel_p1000 = EightChannelConfiguration("P-1000 Multichannel",p1000_multichannel_head,eight_channel_deck,eight_channel_settings)
 const multichannel_p100 = EightChannelConfiguration("P-100 Multichannel",p100_multichannel_head,eight_channel_deck,eight_channel_settings)
 const multichannel_p10 = EightChannelConfiguration("P-10 Multichannel",p10_multichannel_head,eight_channel_deck,eight_channel_settings)
 # deck access functions
-function can_aspirate(h::EightChannelHead, d::EightChannelDeckPosition,l::Labware) 
+function can_aspirate(h::EightChannelHead, d::DeckPosition,l::Labware) 
     return can_place(l,d)
 end 
-function can_dispense(h::EightChannelHead,d::EightChannelDeckPosition,l::Labware) 
+function can_dispense(h::EightChannelHead,d::DeckPosition,l::Labware) 
     return can_place(l,d)
 end
 
