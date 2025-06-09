@@ -66,7 +66,7 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
         # check for missing source organisms needed to create the targets 
         missing_organisms = filter(x-> sum(source_organisms[:,Symbol(JLIMS.name(x))])==0,get_all_organisms(stock.(targets)))
         if length(missing_organisms)>0 
-                throw(MissingOrgansimError("No valid source of $(join(name.(missing_organisms),", ")) available to complete the dispenses",missing_organisms))
+                throw(MissingOrgansimError("No valid source of $(join(JLIMS.name.(missing_organisms),", ")) available to complete the dispenses",missing_organisms))
         end
 
         # update the chemical priority dict to account for the sources and targets 
@@ -410,8 +410,9 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
         end 
         #reset the optimizer to remove the objective cutoff since we are switching objectives 
         optimize!(model) # resolve one last time with the final slack constraints -> we need to optimize before querying results for the secondary objectives 
-
-        set_objective_sense(model, MOI.FEASIBILITY_SENSE)
+        current_slacks=abs.(JuMP.value.(chem_slacks))
+        @constraint(model,chem_slacks .== current_slacks)
+        #set_objective_sense(model, MOI.FEASIBILITY_SENSE)
         @objective(model, Min,sum(costs .* V)) # minimize total masked operations 
         optimize!(model)
         Vval= JuMP.value.(V) 
