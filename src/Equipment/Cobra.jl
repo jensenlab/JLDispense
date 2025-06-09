@@ -559,10 +559,10 @@ function design2protocols(directory::AbstractString,design::DataFrame,source::JL
     n_out=r_out*c_out
     des=Matrix(design)
     r,c=size(des)
-    if r != n_in
+    if r != n_out
       error("output plate size does not match design. Expected design to have $(n_out) rows. Pad design with empty experiments if needed or split the design across multiple destination plates.")
     end 
-    if c > n_out 
+    if c > n_in 
       error("number of design reagents exceeds the size of the source plate. Split the design across multiple source plates")
     end 
     if mod(r,4) != 0 
