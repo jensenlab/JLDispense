@@ -410,8 +410,9 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
         end 
         #reset the optimizer to remove the objective cutoff since we are switching objectives 
         optimize!(model) # resolve one last time with the final slack constraints -> we need to optimize before querying results for the secondary objectives 
-        current_slacks=abs.(JuMP.value.(chem_slacks))
-        @constraint(model,chem_slacks .== current_slacks)
+        T = findall(x->x==true ,t_enforced)
+        current_slacks=JuMP.value.(chem_slacks)
+        @constraint(model,chem_slacks[T,:] .== current_slacks[T,:])
         #set_objective_sense(model, MOI.FEASIBILITY_SENSE)
         @objective(model, Min,sum(costs .* V)) # minimize total masked operations 
         optimize!(model)
