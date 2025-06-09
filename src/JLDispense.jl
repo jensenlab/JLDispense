@@ -1,10 +1,11 @@
 module JLDispense
-import Base.showerror
+import Base: showerror,length
 using 
     CSV,
     DataFrames,
     Gurobi,
     JLIMS,
+    JLConstants,
     JuMP,
     Random,
     Unitful,
@@ -12,32 +13,43 @@ using
     JSON,
     UUIDs,
     Plots,
+    StatsBase,
+    LinearAlgebra,
     TextWrap
+
+import Plots.plot 
+
 include("./RandomProtocolNames/random_protocol_name.jl")
-include("./Robot/Robot.jl")
+include("./Equipment/Configuration.jl")
+include("./utils.jl")
+
+#include("./DispenseSolver/dispense_solver.jl")
+include("./Equipment/Cobra.jl")
+include("./Equipment/Mantis.jl")
+include("./Equipment/Tempest.jl")
+include("./Equipment/Nimbus.jl")
+include("./Equipment/PlateMaster.jl")
+include("./Equipment/SingleChannel.jl")
+include("./Equipment/EightChannel.jl")
+include("./Equipment/NullRobot.jl")
+include("./DispenseSolver/utils.jl")
+include("./DispenseSolver/objectives.jl")
 include("./DispenseSolver/dispense_solver.jl")
-include("./Cobra/Cobra.jl")
-include("./Mantis/Mantis.jl")
-include("./Tempest/Tempest.jl")
-include("./Nimbus/Nimbus.jl")
-include("./Human/Human.jl")
-include("./NimbusCobra/NimbusCobra.jl")
-
-
+include("./Slotting/slotting.jl")
+include("./Instructor/instructor.jl")
+include("./Scheduler/scheduler.jl")
 
 
 #types
 export random_protocol_name
-export showerror
-export Robot,RobotProperties,RobotConfiguration,DeckPosition,Human,HumanProperties,HumanConfiguration,Cobra,CobraProperties,CobraConfiguration,Mantis,MantisProperties,MantisConfiguration
-export feasibility, MixingError,OverdraftError,InsufficientIngredientError,ContainerError,StockCompatibilityError
-export mixer
-export cobra, cobra_default
-export human,human_default, omnipotent_robot
-export mantis, mantis_default
-export tempest,multi_tempest,tempest_default
-export nimbus,nimbus_default
-export dispense_solver, minimize_transfers!,minimize_labware!,minimize_overdrafts!,minimize_sources!,enforce_maxShots!,minimize_overshots!,minimize_labware_crossover!
+
+export min_operations!,min_sources!,min_labware_crossover!
+
+#export MixingError,OverdraftError,InsufficientIngredientError,ContainerError,StockCompatibilityError
+#export strain_array, ingredient_array
+#export mixer
+
+#export dispense_solver, minimize_transfers!,minimize_labware!,minimize_overdrafts!,minimize_sources!,enforce_maxShots!,minimize_overshots!,minimize_labware_crossover!,minimize_robots!
 
 
 end # module JLDispense

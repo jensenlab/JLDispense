@@ -1,0 +1,31 @@
+      588 function is_compatible_source(stock::JLIMS.Stock,robot::Robot)
+      588     a = typeof(stock) in robot.properties.compatible_stocks  # make sure the robot can work with the stocktype 
+     4410     compatible_positions=filter(x->x.can_aspirate==true,robot.properties.positions)
+     2058     if any(ismissing.(map(x->x.compatible_containers,compatible_positions)))
+      294         return a 
+        -     else 
+      882         compatible_containers=unique(vcat(map(t->t.compatible_containers,compatible_positions)...))
+      294         b= JLIMS.well(stock).container in compatible_containers # make sure the robot can use the container that the stock is in 
+      294         return a && b
+        -     end 
+        - end 
+        - 
+      588 function is_compatible_source(culture::JLIMS.Culture,robot::Robot)
+      588     return is_compatible_source(culture.media,robot)
+        - end 
+        - 
+      192 function is_compatible_destination(stock::JLIMS.Stock,robot::Robot)
+      192     a = typeof(stock) in robot.properties.compatible_stocks  # make sure the robot can work with the stocktype 
+     1440     compatible_positions=filter(x->x.can_dispense==true,robot.properties.positions)
+     1536     if any(ismissing.(map(x->x.compatible_containers,compatible_positions)))
+        0         return a 
+        -     else 
+     1344         compatible_containers=unique(vcat(map(t->t.compatible_containers,compatible_positions)...))
+      192         b= JLIMS.well(stock).container in compatible_containers # make sure the robot can use the container that the stock is in 
+      192         return a && b
+        -     end 
+        - end 
+        - 
+      192 function is_compatible_destination(culture::JLIMS.Culture,robot::Robot)
+      192     return is_compatible_destination(culture.media,robot)
+        - end 
