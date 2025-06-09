@@ -654,7 +654,8 @@ function convert_design(design::DataFrame,labware::Vector{<:Labware},slotting::S
   end 
 
   out_design = design[dispense_rows,source_cols]
-
+  println(dispense_rows)
+  println(source_cols)
   dest_labware= filter(x-> can_dispense(head(config),slotting[x][1],x),labware)
   src_labware =filter(x-> can_aspirate(head(config),slotting[x][1],x),labware)
   if length(dest_labware) > 1 
