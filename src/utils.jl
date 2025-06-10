@@ -5,7 +5,7 @@ function cartesian(x::AbstractArray,i)
 end 
 
 function linear(x::AbstractArray,idxs...)
-    return LinearIndeices(x)[idxs...]
+    return LinearIndices(x)[idxs...]
 end 
 
 
@@ -21,11 +21,11 @@ function transfer_table(source::Labware,destination::Labware,design::DataFrame)
                 continue 
             else 
                 src_well = children(source)[cartesian(children(source),row)...]
-                source=JLIMS.location_id(src_well)
+                src=JLIMS.location_id(src_well)
                 dst_well = children(destination)[cartesian(children(destination),col)...]
-                destination=JLIMS.location_id(dst_well)
+                dst=JLIMS.location_id(dst_well)
                 un=string(unit(val))
-                push!(transfer_table,(source,destination,quantity,un))
+                push!(transfer_table,(src,dst,quantity,un))
             end 
         end 
     end 
