@@ -23,7 +23,7 @@ reserviors= Location[]
 for i in 1:n_reserviors
     reservior=generate_location(JLConstants.DeepReservior,"reservior")
     for ch in children(reservior)
-        ch.stock = 100u"mL" *chem"water" 
+        ch.stock = 100u"mL" *chem"water"  
     end
     push!(reserviors,reservior)
 end

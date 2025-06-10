@@ -31,9 +31,8 @@ function instructor(dispenses::AbstractArray{Matrix{Float64}},sources::Vector{<:
         dispense(config,design,directory,protocol_names[s],labware,slotting_dicts[s];kwargs...)
     end 
 
-
+    
 
     return nothing 
 end 
-
 
