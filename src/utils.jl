@@ -20,8 +20,10 @@ function transfer_table(source::Labware,destination::Labware,design::DataFrame)
             if quantity==0 
                 continue 
             else 
-                source=JLIMS.location_id(source[cartesian(source,row)])
-                destination=JLIMS.location_id(destination[cartesian(destination,col)])
+                src_well = children(source)[cartesian(children(source),row)]
+                source=JLIMS.location_id(src_well)
+                dst_well = children(destination)[cartesian(children(destination),col)]
+                destination=JLIMS.location_id(dst_well)
                 un=string(unit(val))
                 push!(transfer_table,(source,destination,quantity,un))
             end 
