@@ -30,7 +30,40 @@ struct MixingError <:Exception
     end 
 
 
+"""
+    dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs::Vector{<:Configuration},secondary_objectives...)
 
+Generate optimal liquid handling protocols that create a set of `targets` from a set of `sources` using a set of instrument `configs`
+
+DispenseSolver Runs in two stages: 
+1) Mixing Mode: The solver will find a protocol that minimizes the target error for each reagnet in each well 
+2) Operational Mode: The solver will find plans that minimize the cost of the protocol (subject to an optimal protocol in Mixing Mode)
+
+DispenseSolver returns two outputs by defualt: 
+
+1) A vector of dispenses (in µL) to be performed on each configuration. Each configuration has an LxL set of dispenses for each labware pair in the problem
+2) A vector of BitMatrices indicating which labware need to be slotted on each instrument. 
+
+# Arguments 
+- `sources`: A vector of [`JLIMS.Well`](https://github.com/jensenlab/JLIMS) objects containing stocks of one or more chemicals/organisms. DispenseSolver can use these in its protocols 
+- `targets`: A vector of `JLIMS.Well` objects that are the target goals of the liquid handling protocols 
+- `configs`: A vector of instrument [`Configuration`](@ref) objects that define which instruments are available to use 
+- `secondary_objectives`: A vararg input of additional objectives for DispenseSolver to consider in Operational Mode. Each objective is considered sequentially and the solver is constrained on all previous objectives. 
+
+# Optional Keyword Arguments 
+- `priority`: A [`PriorityDict`](@ref) that specifies which reagents are more important than others in the plan. By default, all reagents are equal priority. 
+- `quiet`: set to `true` to supresses a printout of the solver's progress. Default = `true`.
+- `timelimit:` the QP solver's timelimit in seconds.
+- `slack_tolerance`: the tolerance given to the solver to change the solution quality in the Mixing Mode while solving for later objectives
+- `numerical_tolerance`: the QP solver's numerical tolerance
+- `require_nonzero`: set to `true` to force DispenseSolver to add some amount of a target reagent even if the optimal solution is to add none. Default is `true`. This prevents reagents from being dropped when working with discrete liquid handlers. 
+- `return_model`: set to `true` to return the model and a measure of the solution quality as part of the output 
+- `obj_tolerance`: the tolerance of the solver's solution. DispesnseSolver will disallow any solutions that are above the objective tolerance 
+- `inoculation_quantity`: the volume in µL of dispenses that deliver organisms
+- ` round_digits`: The number of digits the dispense lists should be rounded to when reporting the solution. 
+- `robot_cost`: The relative cost of each instrument in the solver.
+
+"""
 function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs::Vector{<:Configuration},secondary_objectives...;robot_cost::Vector{<:Real}=ones(length(configs)),quiet::Bool=true, timelimit::Real=10,slack_tolerance::Real=1e-4,numerical_tolerance::Real=1e-8,require_nonzero::Bool=true,return_model::Bool=false,obj_tolerance=1e-3,inoculation_quantity::Real=2, priority::PriorityDict=Dict{JLIMS.Chemical,UInt64}(),round_digits::Int=1,kwargs...) 
 
 

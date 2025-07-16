@@ -45,6 +45,8 @@ export random_protocol_name
 
 export min_operations!,min_sources!,min_labware_crossover!
 
+export dispense_solver 
+
 #export MixingError,OverdraftError,InsufficientIngredientError,ContainerError,StockCompatibilityError
 #export strain_array, ingredient_array
 #export mixer
