@@ -1,3 +1,20 @@
+#=
+# General format for new objective definitions. New objectives transform the model and should use the ! to indicate as such. 
+
+function new_objective!(model)
+#1) define any new cost-tracking variables
+#2) write constraints to track to the new variables in terms of Q or V
+#3) set the model objective
+#4) optimize the model
+#5) constrain future solutions to ensure they are optimal for this
+objective
+return model
+end
+
+=#
+
+
+
 function min_operations!(model;numerical_tolerance::Real=1e-8,kwargs...) 
     V = model[:V] 
     M,N=size(V)
