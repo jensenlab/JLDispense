@@ -1,4 +1,17 @@
-function instructor(dispenses::AbstractArray{Matrix{Float64}},sources::Vector{<:Well},destinations::Vector{<:Well},config::Configuration,slotting::BitMatrix;directory=pwd(),packing_method=packing_greedy,kwargs...)
+
+
+
+"""
+    protocol_compilier(dispenses,sources,destinations,config,slotting) 
+
+Given a set of dispense plans `dispenses` from DispenseSolver, find labware slotting configurations for the labware involved, and compile the protocol using the each instruments `dispense` function. 
+
+This function writes the protocols to the current working directory by defualt. The directory can be changed with the keyword argument `directory`
+
+see also: [`JLDispense.dispense`](@ref) 
+
+"""
+function protocol_compiler(dispenses::AbstractArray{Matrix{Float64}},sources::Vector{<:Well},destinations::Vector{<:Well},config::Configuration,slotting::BitMatrix;directory=pwd(),packing_method=packing_greedy,kwargs...)
 
 
 
