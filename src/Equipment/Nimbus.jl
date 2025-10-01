@@ -88,7 +88,7 @@ function masks(h::NimbusSingleChannelHead,l::JLConstants.WP384)
         return false
     end 
     Md=Ma
-    return Ma,Md 
+    return Ma,Md, (0,0),(0,0)
 end 
 
 

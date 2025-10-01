@@ -78,68 +78,71 @@ end
 
 
 
-function masks(h::CobraHead,l::JLConstants.WellPlate) # for generic 96 well plates, we will define a separate method for 384 well plates 
+function masks(h::CobraHead,l::Union{JLConstants.WP96,JLConstants.DeepWP96}) # for generic 96 well plates, we will define a separate method for 384 well plates 
   C= length(channels(h))
   Wi,Wj=JLIMS.shape(l)
   Pi,Pj = 5,12
-  W = falses(Wi,Wj)
-  P=falses(Pi,Pj)
+  Wa = falses(Wi,Wj)
+  Pa=falses(Pi,Pj)
   Sa=(Pi*Pj,C)
   function Ma(w::Integer,p::Integer,c::Integer) 
       # w=wells, p=positions, c=channels
       1 <= w <= Wi*Wj || return false 
       1 <= p <= Pi*Pj || return false 
       1 <= c <= C || return false 
-      wi,wj=cartesian(W,w)
-      pm,pn=cartesian(P,p)
+      wi,wj=cartesian(Wa,w)
+      pm,pn=cartesian(Pa,p)
       return wi == c+pm-1 && wj == pn 
   end 
   C= length(channels(h))
   Wi,Wj=JLIMS.shape(l)
   Pi,Pj = 11,12
-  W = falses(Wi,Wj)
-  P=falses(Pi,Pj)
+  Wd = falses(Wi,Wj)
+  Pd=falses(Pi,Pj)
   Sd=(Pi*Pj,C)
   function Md(w::Integer,p::Integer,c::Integer) 
       # w=wells, p=positions, c=channels
       1 <= w <= Wi*Wj || return false 
       1 <= p <= Pi*Pj || return false 
       1 <= c <= C || return false 
-      wi,wj=cartesian(W,w)
-      pm,pn=cartesian(P,p)
+      wi,wj=cartesian(Wd,w)
+      pm,pn=cartesian(Pd,p)
       return wi == c+pm-4 && wj == pn 
   end
   return Ma,Md,Sa,Sd
 end
+
+
+
 function masks(h::CobraHead,l::JLConstants.WP384) 
   C= length(channels(h))
   Wi,Wj=JLIMS.shape(l)
   Pi,Pj = 10,12
-  W = falses(Wi,Wj)
-  P=falses(Pi,Pj)
+  Wa = falses(Wi,Wj)
+  Path=falses(Pi,Pj)
   Sa=(Pi*Pj,C)
   function Ma(w::Integer,p::Integer,c::Integer) 
       # w=wells, p=positions, c=channels
       1 <= w <= Wi*Wj || return false 
       1 <= p <= Pi*Pj || return false 
       1 <= c <= C || return false 
-      wi,wj=cartesian(W,w)
-      pm,pn=cartesian(P,p)
+      wi,wj=cartesian(Wa,w)
+      pm,pn=cartesian(Pa,p)
       return wi == 2*(c-1)+pm && wj == pn 
   end 
   C= length(channels(h))
   Wi,Wj=JLIMS.shape(l)
   Pi,Pj = 22,12
-  W = falses(Wi,Wj)
-  P=falses(Pi,Pj)
+  Wd = falses(Wi,Wj)
+  Pd=falses(Pi,Pj)
   Sd=(Pi*Pj,C)
   function Md(w::Integer,p::Integer,c::Integer) 
       # w=wells, p=positions, c=channels
       1 <= w <= Wi*Wj || return false 
       1 <= p <= Pi*Pj || return false 
       1 <= c <= C || return false 
-      wi,wj=cartesian(W,w)
-      pm,pn=cartesian(P,p)
+      wi,wj=cartesian(Wd,w)
+      pm,pn=cartesian(Pd,p)
       return wi == 2*(c-1)+pm-6 && wj == pn 
   end 
   return Ma,Md,Sa,Sd
@@ -151,7 +154,7 @@ function masks(h::CobraHead,l::JLConstants.DeepReservior) # for generic 96 well 
   Pi,Pj = 1,1
   W = falses(Wi,Wj)
   P=falses(Pi,Pj)
-  S = (1,1)
+  S = (1,C)
   function Ma(w::Integer,p::Integer,c::Integer) 
       # w=wells, p=positions, c=channels
       1 <= w <= Wi*Wj || return false 

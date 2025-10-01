@@ -11,10 +11,10 @@ end
 
 plate_master_compat_labware=Set([JLConstants.WellPlate])
 
-pm1=SBSPosition("Slot 1", plate_master_compat_labware,(1,1),false,true,false,false,"rectangle")
-pm2=SBSPosition("Slot 2", plate_master_compat_labware,(1,1),false,true,false,false,"rectangle")
-pm3=SBSPosition("Slot 3", plate_master_compat_labware,(1,1),false,true,false,false,"rectangle")
-pm4=SBSPosition("Slot 4", plate_master_compat_labware,(1,1),false,true,false,false,"rectangle")
+pm1=SBSPosition("Slot 1", plate_master_compat_labware,(1,1),true,true,false,false,"rectangle")
+pm2=SBSPosition("Slot 2", plate_master_compat_labware,(1,1),true,true,false,false,"rectangle")
+pm3=SBSPosition("Slot 3", plate_master_compat_labware,(1,1),true,true,false,false,"rectangle")
+pm4=SBSPosition("Slot 4", plate_master_compat_labware,(1,1),true,true,false,false,"rectangle")
 
 
 const platemaster_deck= [pm1 pm2; pm3 pm4]

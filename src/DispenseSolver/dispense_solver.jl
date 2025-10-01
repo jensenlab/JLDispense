@@ -64,7 +64,7 @@ DispenseSolver returns two outputs by defualt:
 - `robot_cost`: The relative cost of each instrument in the solver.
 
 """
-function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs::Vector{<:Configuration},secondary_objectives...;robot_cost::Vector{<:Real}=ones(length(configs)),quiet::Bool=true, timelimit::Real=10,slack_tolerance::Real=1e-4,numerical_tolerance::Real=1e-8,require_nonzero::Bool=true,return_model::Bool=false,obj_tolerance=1e-3,inoculation_quantity::Real=2, priority::PriorityDict=Dict{JLIMS.Chemical,UInt64}(),round_digits::Int=1,kwargs...) 
+function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs::Vector{<:Configuration},secondary_objectives...;robot_cost::Vector{<:Real}=ones(length(configs)),quiet::Bool=true, timelimit::Real=10,slack_tolerance::Real=1e-4,numerical_tolerance::Real=1e-8,require_nonzero::Bool=true,return_model::Bool=false,obj_tolerance=1e-3,operation_tolerance=1e-3,inoculation_quantity::Real=2, priority::PriorityDict=Dict{JLIMS.Chemical,UInt64}(),round_digits::Int=1,kwargs...) 
 
 
 
@@ -78,7 +78,11 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
 
         src_stocks, tgt_stocks, s_enforced,t_enforced,tgt_caps = slot_stocks(sources,targets)
         src_quantities =ustrip.(map(x->uconvert(preferred_quantity_unit(x),JLIMS.quantity(x)),src_stocks))
- 
+        for s in eachindex(src_quantities)
+                if ismissing(src_quantities[s]) 
+                        src_quantities[s] = 0 
+                end 
+        end 
         # Create the concentration array for the sources and the target quantity array for the destinations
         source_concentrations=chemical_array(src_stocks,all_chemicals) 
         sc = Float64.(Matrix(Unitful.ustrip.(source_concentrations)))
@@ -89,17 +93,16 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
         tq = Float64.(Matrix(Unitful.ustrip.(target_quantities)))
         target_organisms = organism_array(tgt_stocks,all_organisms)
         to= Matrix(target_organisms)
-        println(typeof(to))
         # check for missing source chemicals needed to complete the destinations
         missing_chemicals=filter(x-> sum(Unitful.ustrip.(source_concentrations[:,Symbol(x.name)]))==0,get_all_chemicals(stock.(targets)))       
         if length(missing_chemicals) > 0 
-                throw(MissingChemicalError("No valid source of $(join(name.(missing_chemicals),", ")) available to complete the dispenses",missing_chemicals))
+                throw(MissingChemicalError("No valid source of $(join(JLIMS.name.(missing_chemicals),", ")) available to complete the dispenses"))
         end 
 
         # check for missing source organisms needed to create the targets 
         missing_organisms = filter(x-> sum(source_organisms[:,Symbol(JLIMS.name(x))])==0,get_all_organisms(stock.(targets)))
         if length(missing_organisms)>0 
-                throw(MissingOrgansimError("No valid source of $(join(JLIMS.name.(missing_organisms),", ")) available to complete the dispenses",missing_organisms))
+                throw(MissingOrgansimError("No valid source of $(join(JLIMS.name.(missing_organisms),", ")) available to complete the dispenses"))
         end
 
         # update the chemical priority dict to account for the sources and targets 
@@ -125,7 +128,6 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
 
         m = 1 
         n=1
-
         Rm = []
         Rn = [] 
         for r in 1:R 
@@ -159,8 +161,8 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
         N = length(keys(NDict))
         MVec = collect(keys(MDict))
         NVec = collect(keys(NDict))
-        println(Rm)
-        println(Rn)
+        #println(Rm)
+        #println(Rn)
         # set up cost matrix for the cost of each flow 
         costs=ones(M,N)
         for a in eachindex(Rm)
@@ -185,8 +187,8 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
                 wm_mapping = Int[]
                 wm_nozzles = Nozzle[]
                 wn_mapping = Int[]
-                wm_channel = Int[]
-                wn_channel = Int[]
+                wm_channel = Tuple{Int,Int}[]
+                wn_channel = Tuple{Int,Int}[]
                 for r in 1:R 
                         
                         Ma = asp[r,l][1]
@@ -201,7 +203,7 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
                                                 if Ma(i,p,c) && Mp(t,c)
                                                         push!(wm_mapping,MDict[(r,l,p,t)])
                                                         push!(wm_nozzles,channels(head(configs[r]))[c])
-                                                        push!(wm_channel,c)
+                                                        push!(wm_channel,(r,c))
                                                 end
                                         end
 
@@ -212,7 +214,7 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
                                         for t in 1:pistons
                                                 if Md(i,p,c) && Mp(t,c)
                                                         push!(wn_mapping,NDict[(r,l,p,t)])
-                                                        push!(wn_channel,c)
+                                                        push!(wn_channel,(r,c))
                                                 end 
                                         end 
                                 end
@@ -242,7 +244,7 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
         @variable(model,chem_slacks[1:W,1:C])
         @variable(model,org_slacks[1:W,1:O])
         @variable(model,Qlw[1:L,1:L] >= 0)
-
+        @variable(model, MILPCheck,Bin) # Gurobi throws an error if you introduce integer variables after solving a model that contains only continous variables. I don't know why, but presumably it can take shortcuts if there aren't existing integer variables in the model. This variable prevents the error, but does not do anyting.
 
 
 
@@ -268,7 +270,7 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
                                         end
                                 end 
                         end 
-                        idxs=CartesianIndex.(idxs)
+                        idxs=CartesianIndex.(idxs) 
                         if length(idxs) > 0 
 
                                 if i ==j 
@@ -444,16 +446,18 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
         #reset the optimizer to remove the objective cutoff since we are switching objectives 
         optimize!(model) # resolve one last time with the final slack constraints -> we need to optimize before querying results for the secondary objectives 
         T = findall(x->x==true ,t_enforced)
-        current_slacks=JuMP.value.(chem_slacks)
-        @constraint(model,chem_slacks[T,:] .== current_slacks[T,:])
-        #set_objective_sense(model, MOI.FEASIBILITY_SENSE)
+        current_slacks=abs.(JuMP.value.(chem_slacks))
+        delta=slack_tolerance * tq[T,:]
+        @constraint(model,chem_slacks[T,:] .>= - current_slacks[T,:] .- delta)
+        @constraint(model,chem_slacks[T,:] .<= current_slacks[T,:] .+ delta )
+        set_objective_sense(model, MOI.FEASIBILITY_SENSE)
         @objective(model, Min,sum(costs .* V)) # minimize total masked operations 
         optimize!(model)
         Vval= JuMP.value.(V) 
         @constraint(model,sum(costs .* V) <= sum( costs .* Vval))
 
         optimize!(model) # re optimize so we can query, but further solutions will be constrained by the previous objective
-
+        println(termination_status(model))
 
 
         for obj! in secondary_objectives # run through secondary objectives found in objectives.jl 
