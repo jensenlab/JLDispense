@@ -36,7 +36,7 @@ include("./DispenseSolver/utils.jl")
 include("./DispenseSolver/objectives.jl")
 include("./DispenseSolver/dispense_solver.jl")
 include("./Slotting/slotting.jl")
-include("./Instructor/instructor.jl")
+include("./Compilier/protocol_compilier.jl")
 include("./Scheduler/scheduler.jl")
 
 
@@ -45,11 +45,16 @@ export random_protocol_name
 
 export min_operations!,min_sources!,min_labware_crossover!
 
-#export MixingError,OverdraftError,InsufficientIngredientError,ContainerError,StockCompatibilityError
-#export strain_array, ingredient_array
-#export mixer
+export dispense_solver 
+export protocol_compiler 
+export scheduler 
 
-#export dispense_solver, minimize_transfers!,minimize_labware!,minimize_overdrafts!,minimize_sources!,enforce_maxShots!,minimize_overshots!,minimize_labware_crossover!,minimize_robots!
-
+export cobra
+export nimbus 
+export platemaster 
+export p1000, p200, p20, p2
+export  mantis_lv, mantis_hv 
+export  tempest_lv , tempest_hv
+export  multichannel_p1000_h,multichannel_p1000_v, multichannel_p100_h ,multichannel_p100_v , multichannel_p10_h , multichannel_p10_v 
 
 end # module JLDispense

@@ -6,7 +6,7 @@ Random.seed!(48207531)
 date=string(Dates.today())
 outfile="./benchmarking/benchmark_$date.csv"
 
-robots = [JLDispense.p200,JLDispense.platemaster,JLDispense.multichannel_p100,JLDispense.nimbus,JLDispense.cobra]
+robots = [JLDispense.p200,JLDispense.platemaster,JLDispense.multichannel_p100_v,JLDispense.nimbus,JLDispense.cobra]
 
 KK = [12,24,36,48]
 LL = 2:6

@@ -24,22 +24,19 @@ struct TempestHVHead <: TempestHead
     TempestHVHead() = new(fill(tempest_hv_nozzle,8))
 end 
 
-abstract type TempestDeckPosition <: DeckPosition end 
 
-struct TempestInput <: TempestDeckPosition
-    labware::Set{Type{<:Labware}}
-    TempestInput() = new(Set([JLConstants.Bottle,JLConstants.Conical]))
-end 
 
-struct TempestMagazine <: TempestDeckPosition
-    labware::Set{Type{<:Labware}}
-    TempestMagazine() = new(Set([JLConstants.MicroPlate]))
-end  
+const tempest_input = StackPosition("Inputs",Set([JLConstants.Bottle,JLConstants.Tube]),(6,1),true,false,false,false,"circle")
+const tempest_magazine = StackPosition("Magazine" , Set([JLConstants.WP96,JLConstants.WP384]),(24,1),false,true,false,false,"rectangle")
+
+
+
+
 
 struct TempestSettings <: InstrumentSettings 
 end 
 
-tempest_deck= vcat(fill(TempestInput(),6),fill(TempestMagazine(),24))
+tempest_deck= vcat(tempest_input,tempest_magazine)
 
 TempestConfiguration=Configuration{TempestHead,Deck,TempestSettings}
 
@@ -105,7 +102,7 @@ end
 
 
 function masks(h::TempestHead,l::Union{JLConstants.Bottle,JLConstants.Tube}) # for generic 96 well plates, we will define a separate method for 384 well plates 
-    C= 1
+    C= 8
     Wi,Wj=JLIMS.shape(l)
     Pi,Pj = 1,1
     W = falses(Wi,Wj)
