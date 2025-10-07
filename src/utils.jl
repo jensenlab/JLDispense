@@ -38,7 +38,7 @@ function is_square(df::DataFrame)
 end 
 
 
-function get_labware(labware::Vector{Labware},index::Integer) 
+function get_labware(labware::Vector{<:Labware},index::Integer) 
 
     return vcat(map(x->fill(x,length(x)),labware)...)[index] 
 end 
