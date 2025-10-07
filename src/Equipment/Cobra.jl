@@ -53,7 +53,7 @@ const cobra_position_2=SBSPosition("Dispense", cobra_compat_labware,(1,1),false,
 
 const cobra_deck = [cobra_position_1,cobra_position_2]
 
-const cobra_settings= CobraSettings(true,0,"C:\\Users\\Dell\\Dropbox (University of Michigan)\\JensenLab\\Cobra\\",8000,1.1,2)
+const cobra_settings= CobraSettings(true,0,"C:\\Users\\Dell\\University of Michigan Dropbox\\Benjamin David\\JensenLab\\Cobra\\",8000,1.1,2)
 
 const cobra =CobraConfiguration("Cobra",cobra_head,cobra_deck,cobra_settings)
 
