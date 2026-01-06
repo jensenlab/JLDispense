@@ -13,7 +13,7 @@ src_wells = vcat(map(x->vec(children(x)),conicals)...)
 
 src_wells=vcat(src_wells,children(reservior)[1])
 
-instruments =[JLDispense.p20,JLDispense.platemaster,JLDispense.multichannel_p100,JLDispense.mantis_hv,JLDispense.mantis_lv,JLDispense.cobra,JLDispense.nimbus,JLDispense.tempest_lv]
+instruments =[JLDispense.p20,JLDispense.platemaster,JLDispense.multichannel_p100_v,JLDispense.mantis_hv,JLDispense.mantis_lv,JLDispense.cobra,JLDispense.nimbus,JLDispense.tempest_lv]
 instruments=[JLDispense.nimbus,JLDispense.cobra,JLDispense.platemaster]
 inst_cost = [100,1,12,3,5,1,2,3]
 ins= [JLDispense.p2]
