@@ -47,3 +47,18 @@ inst = ["single channel", "multichannel horizontal","multichannel vertical","nim
 out_df = DataFrame(instrument=inst, expt1=a,expt2=b)
 
 CSV.write("./combinatorial_media_by_instrument.csv",out_df)
+
+mdl1 = out1.value[3]
+mdl2= out2.value[3]
+Q1 = JuMP.value.(mdl1[:Q])
+V1 = JuMP.value.(mdl1[:V])
+Q2 = JuMP.value.(mdl2[:Q])
+V2= JuMP.value.(mdl2[:V])
+
+expts = ["experiment1","experiment2"]
+sumQ = [sum(Q1),sum(Q2)]
+sumV = [sum(V1),sum(V2)]
+nQ = [sum(Q1 .>0),sum(Q2 .> 0)]
+nV = [sum(V1 .>0),sum(V2 .> 0)]
+summary_df = DataFrame(Experiment=expts,TotalVolume=sumQ,TotalFlow=sumV,Transfers=nQ,Flows=nV)
+CSV.write("./combinatorial_media_summary.csv",summary_df)
