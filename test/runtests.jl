@@ -26,9 +26,9 @@ sec_objectives = (min_operations!,min_sources!,min_labware_crossover!)
 sec_objectives = (min_operations!,) 
 sec_objectives=()
 
-disp,slotting,out = JLDispense.dispense_solver(src_wells,tgt_wells,instruments,sec_objectives...;priority=priority,obj_tolerance=1e-2,return_model=true)
+disp,slotting,out = JLDispense.dispense_solver(src_wells,tgt_wells,instruments,sec_objectives...;priority=priority,obj_tolerance=3e-2,return_model=true)
 
-timetest = @timed  JLDispense.dispense_solver(src_wells,tgt_wells,instruments,sec_objectives...;priority=priority,obj_tolerance=1e-2,return_model=true)
+timetest = @timed  JLDispense.dispense_solver(src_wells,tgt_wells,instruments,sec_objectives...;priority=priority,obj_tolerance=3e-2,return_model=true)
 optimize!(out)
 Q=out[:Q] 
 V= JuMP.value.(out[:V])
@@ -80,4 +80,4 @@ if !isdir(disp_directory)
     mkdir(disp_directory)
 end
 
-JLDispense.scheduler(disp_directory,src_wells,tgt_wells,instruments,sec_objectives...;priority=priority,obj_tolerance=1e-2)
+JLDispense.scheduler(disp_directory,src_wells,tgt_wells,instruments,sec_objectives...;priority=priority,obj_tolerance=3e-2)

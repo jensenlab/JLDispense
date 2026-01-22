@@ -1,0 +1,94 @@
+<?xml version="1.0"?>
+<Protocol xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <DispenseSpeed>49.6</DispenseSpeed>
+  <DispenseOffset>0.25</DispenseOffset>
+  <UseDispensePauseMode>true</UseDispensePauseMode>
+  <PredispenseCount>0</PredispenseCount>
+  <PredispenseLocation>Source</PredispenseLocation>
+  <DeckLocations>
+    <PlateSelection>
+      <DeckNumber>1</DeckNumber>
+      <AdapterName>None</AdapterName>
+      <Plates>
+        <PlateUseDescription>
+          <Name>Deep Well 2 ml</Name>
+          <Use>Aspirate</Use>
+        </PlateUseDescription>
+      </Plates>
+    </PlateSelection>
+    <PlateSelection>
+      <DeckNumber>2</DeckNumber>
+      <AdapterName>None</AdapterName>
+      <Plates>
+        <PlateUseDescription>
+          <Name>96 Costar</Name>
+          <Use>Dispense</Use>
+        </PlateUseDescription>
+      </Plates>
+    </PlateSelection>
+  </DeckLocations>
+  <RepeatCount>1</RepeatCount>
+  <ASPDistanceToBottom>2</ASPDistanceToBottom>
+  <AspirateChannel1StartWell>
+    <Row>A</Row>
+    <Column>6</Column>
+  </AspirateChannel1StartWell>
+  <StagePostionForAspirate>1</StagePostionForAspirate>
+  <AspirateIsSelected>true</AspirateIsSelected>
+  <DispenseIsSelected>true</DispenseIsSelected>
+  <DispensePattern>Serial</DispensePattern>
+  <ParallelDispenseChannels>ChannelsAtoD</ParallelDispenseChannels>
+  <WashIsSelected>true</WashIsSelected>
+  <WashStrategy>ReservoirA</WashStrategy>
+  <WashTimeAMsec>8000</WashTimeAMsec>
+  <WashTimeBMsec>0</WashTimeBMsec>
+  <PurgeAfterDispense>false</PurgeAfterDispense>
+  <DispenseChannels>
+    <DispenseChannelInfo>
+      <AspirateVolume>6.160000000000002</AspirateVolume>
+      <DispenseType>AirBacked</DispenseType>
+      <DispenseVolume>0.1</DispenseVolume>
+      <UseBottleCheck>false</UseBottleCheck>
+      <UsesCustomFile>true</UsesCustomFile>
+      <CustomFileName>C:\Users\Dell\University of Michigan Dropbox\Benjamin David\JensenLab\Cobra\apparently_burying\DispenseFile53.csv</CustomFileName>
+      <LiquidClassName>Water</LiquidClassName>
+      <AspirateAdjustPercentage>0</AspirateAdjustPercentage>
+      <DispenseAdjustPercentage>0</DispenseAdjustPercentage>
+    </DispenseChannelInfo>
+    <DispenseChannelInfo>
+      <AspirateVolume>0.0</AspirateVolume>
+      <DispenseType>AirBacked</DispenseType>
+      <DispenseVolume>0.2</DispenseVolume>
+      <UseBottleCheck>false</UseBottleCheck>
+      <UsesCustomFile>true</UsesCustomFile>
+      <CustomFileName>C:\Users\Dell\University of Michigan Dropbox\Benjamin David\JensenLab\Cobra\apparently_burying\DispenseFile54.csv</CustomFileName>
+      <LiquidClassName>Water</LiquidClassName>
+      <AspirateAdjustPercentage>0</AspirateAdjustPercentage>
+      <DispenseAdjustPercentage>0</DispenseAdjustPercentage>
+    </DispenseChannelInfo>
+    <DispenseChannelInfo>
+      <AspirateVolume>0.0</AspirateVolume>
+      <DispenseType>AirBacked</DispenseType>
+      <DispenseVolume>0.3</DispenseVolume>
+      <UseBottleCheck>false</UseBottleCheck>
+      <UsesCustomFile>true</UsesCustomFile>
+      <CustomFileName>C:\Users\Dell\University of Michigan Dropbox\Benjamin David\JensenLab\Cobra\apparently_burying\DispenseFile55.csv</CustomFileName>
+      <LiquidClassName>Water</LiquidClassName>
+      <AspirateAdjustPercentage>0</AspirateAdjustPercentage>
+      <DispenseAdjustPercentage>0</DispenseAdjustPercentage>
+    </DispenseChannelInfo>
+    <DispenseChannelInfo>
+      <AspirateVolume>0.0</AspirateVolume>
+      <DispenseType>AirBacked</DispenseType>
+      <DispenseVolume>0.5</DispenseVolume>
+      <UseBottleCheck>false</UseBottleCheck>
+      <UsesCustomFile>true</UsesCustomFile>
+      <CustomFileName>C:\Users\Dell\University of Michigan Dropbox\Benjamin David\JensenLab\Cobra\apparently_burying\DispenseFile56.csv</CustomFileName>
+      <LiquidClassName>Water</LiquidClassName>
+      <AspirateAdjustPercentage>0</AspirateAdjustPercentage>
+      <DispenseAdjustPercentage>0</DispenseAdjustPercentage>
+    </DispenseChannelInfo>
+  </DispenseChannels>
+  <PurgeAfterDispenseHeight>9</PurgeAfterDispenseHeight>
+  <DispenseTestMode>None</DispenseTestMode>
+</Protocol>
