@@ -500,9 +500,9 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
                                                 sol_quality[d,c]= 0 
                                 elseif target == 0 && !isapprox(slack,0;atol=numerical_tolerance) 
                                                 println("stock target ($(d)), chemical: $(all_chemicals[c]), unbounded error, using max target value for $(all_chemicals[c]) to calculate error")
-                                                sol_quality[c] = slack/ maximum(tq[:,c])
+                                                sol_quality[d,c] = slack/ maximum(tq[:,c])
                                 else
-                                                sol_quality[c]= slack/target 
+                                                sol_quality[d,c]= slack/target 
                                 end 
                         end
                 end
@@ -512,7 +512,8 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
                 error("Unacceptable Solution: \n      max error = $(max_error*100)% \n        tolerance limit = $(obj_tolerance*100)% \n      stock_target: $(max_idx[1]) \n  chemical: $(all_chemicals[max_idx[2]])")
                  
         end 
-        println("mean solution error: $(mean(sol_quality*100))")
+        println("mean solution error: $(round(mean(sol_quality*100),digits=3))%")
+        println("maximum solution error: $(round(maximum(sol_quality*100),digits=3))%")
 
 
 
