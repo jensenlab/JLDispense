@@ -64,7 +64,7 @@ DispenseSolver returns two outputs by defualt:
 - `robot_cost`: The relative cost of each instrument in the solver.
 
 """
-function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs::Vector{<:Configuration},secondary_objectives...;robot_cost::Vector{<:Real}=ones(length(configs)),quiet::Bool=true, timelimit::Real=10,slack_tolerance::Real=1e-4,numerical_tolerance::Real=1e-8,require_nonzero::Bool=true,return_model::Bool=false,obj_tolerance=1e-3,operation_tolerance=1e-3,inoculation_quantity::Real=2, priority::PriorityDict=Dict{JLIMS.Chemical,UInt64}(),round_digits::Int=1,kwargs...) 
+function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs::Vector{<:Configuration},secondary_objectives...;robot_cost::Vector{<:Real}=ones(length(configs)),quiet::Bool=true, timelimit::Real=10,slack_tolerance::Real=1e-4,numerical_tolerance::Real=1e-8,require_nonzero::Bool=true,return_model::Bool=false,obj_tolerance=1e-3,operation_tolerance=1e-3,inoculation_quantity::Real=2, priority::PriorityDict=Dict{JLIMS.Chemical,UInt64}(),round_digits::Int=1,feasibility_tolerance::Real=1e-6,kwargs...) 
 
 
 
@@ -236,6 +236,7 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
             set_silent(model)
         end 
         JuMP.set_attribute(model,"TimeLimit",timelimit)
+        JuMP.set_attribute(model,"FeasibilityTol",feasibility_tolerance)
 
     
         # Define Model variables 
