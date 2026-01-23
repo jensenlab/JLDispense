@@ -400,6 +400,9 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
                 chem_weights= falses(C)
                 for c in 1:C
                         if priority[all_chemicals[c]] <= level 
+                                if all_chemicals[c] == chem"water" 
+                                        println("activated weight for water on level $level")
+                                end 
                                 chem_weights[c]=true # activate the weight term for this ingredient on this pass
                         end 
                 end 
