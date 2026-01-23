@@ -1,9 +1,9 @@
-preferred_quantity_unit(ing::JLIMS.Solid) =u"mg"
+preferred_quantity_unit(ing::JLIMS.Solid) =u"ng"
 preferred_quantity_unit(ing::JLIMS.Liquid) = u"µL"
 
 
 preferred_quantity_unit(stock::JLIMS.Stock)= u"µL"
-preferred_quantity_unit(stock::JLIMS.Mixture) =u"mg"
+preferred_quantity_unit(stock::JLIMS.Mixture) =u"ng"
 
 
 
