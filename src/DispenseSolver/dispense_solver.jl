@@ -106,7 +106,7 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
         end
 
         # update the chemical priority dict to account for the sources and targets 
-        update_priority!(sources,targets,priority)
+        full_priority= update_priority(sources,targets,priority)
 
         W = length(src_stocks) # number of total wells in the model
         C = length(all_chemicals)
@@ -351,7 +351,7 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
 
         
         for c in 1:C
-                if priority[all_chemicals[c]] == UInt(0)
+                if full_priority[all_chemicals[c]] == UInt(0)
                         for d in 1:W
                                 @constraint(model, chem_slacks[d,c]==0) # priority 0 ingredients must hit the target exactly for each destination. The slack must be zero (because the delivered quantity must be zero)  
                         end 
@@ -393,13 +393,13 @@ function dispense_solver(sources::Vector{<:Well},targets::Vector{<:Well},configs
         set_objective_sense(model, MOI.FEASIBILITY_SENSE)
 
         target_weights = t_enforced 
-        priority_levels= sort(unique(collect(values(priority))))
+        priority_levels= sort(unique(collect(values(full_priority))))
         for level in priority_levels  # pass through all priority levels from lowest to higest level
 
 
                 chem_weights= falses(C)
                 for c in 1:C
-                        if priority[all_chemicals[c]] <= level 
+                        if full_priority[all_chemicals[c]] <= level 
                                 if all_chemicals[c] == chem"water" 
                                         println("activated weight for water on level $level")
                                 end 

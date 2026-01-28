@@ -1,9 +1,9 @@
-using JLDispense, JLIMS, JLConstants , Unitful, Plots , SQLite,DataFrames, StatsBase, JuMP,CSV
+using JLDispense, JLIMS, JLConstants , Unitful, Plots , SQLite,DataFrames, StatsBase, JuMP,CSV, Test
 init_file= "init_tests.jl"
 
 include(init_file)
 
-
+include("test_interface.jl")
 
 
 
